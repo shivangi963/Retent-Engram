@@ -1,0 +1,9 @@
+[
+  {"concept_id": "OS", "name": "Operating Systems", "difficulty": 3},
+  {"concept_id": "DBMS", "name": "Database Management", "difficulty": 3},
+  {"concept_id": "CN", "name": "Computer Networks", "difficulty": 3},
+  {"concept_id": "DSA", "name": "Data Structures", "difficulty": 2},
+  {"concept_id": "ML", "name": "Machine Learning", "difficulty": 4},
+  {"concept_id": "PYTHON", "name": "Python OOP", "difficulty": 2},
+  {"concept_id": "CLOUD", "name": "Cloud Computing", "difficulty": 4}
+]
