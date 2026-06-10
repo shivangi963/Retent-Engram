@@ -1,9 +1,12 @@
 [
-  {"concept_id": "OS", "name": "Operating Systems", "difficulty": 3},
-  {"concept_id": "DBMS", "name": "Database Management", "difficulty": 3},
-  {"concept_id": "CN", "name": "Computer Networks", "difficulty": 3},
-  {"concept_id": "DSA", "name": "Data Structures", "difficulty": 2},
-  {"concept_id": "ML", "name": "Machine Learning", "difficulty": 4},
-  {"concept_id": "PYTHON", "name": "Python OOP", "difficulty": 2},
-  {"concept_id": "CLOUD", "name": "Cloud Computing", "difficulty": 4}
+  {"concept_id": "os", "name": "Operating Systems", "difficulty": 4, "subject": "CS Core", "prerequisites": []},
+  {"concept_id": "dbms", "name": "Database Management Systems", "difficulty": 3, "subject": "CS Core", "prerequisites": []},
+  {"concept_id": "cn", "name": "Computer Networks", "difficulty": 4, "subject": "CS Core", "prerequisites": []},
+  {"concept_id": "dsa", "name": "Data Structures & Algorithms", "difficulty": 5, "subject": "CS Core", "prerequisites": []},
+  {"concept_id": "python_oop", "name": "Python OOP", "difficulty": 2, "subject": "Programming", "prerequisites": []},
+  {"concept_id": "process_mgmt", "name": "Process Management", "difficulty": 4, "subject": "CS Core", "prerequisites": ["os"]},
+  {"concept_id": "memory_mgmt", "name": "Memory Management", "difficulty": 4, "subject": "CS Core", "prerequisites": ["os"]},
+  {"concept_id": "sql", "name": "SQL Queries", "difficulty": 3, "subject": "CS Core", "prerequisites": ["dbms"]},
+  {"concept_id": "binary_search", "name": "Binary Search", "difficulty": 2, "subject": "Programming", "prerequisites": []},
+  {"concept_id": "recursion", "name": "Recursion", "difficulty": 3, "subject": "Programming", "prerequisites": []}
 ]
