@@ -1,188 +1,79 @@
-# backend/ml/features.py
-
 import sys
 import os
 sys.path.append(os.path.join(os.path.dirname(__file__), "..", ".."))
 
 from datetime import datetime, timezone
-import math
-from backend.db import get_collection
 
-# ── Constants ─────────────────────────────────────────────────────────────────
+def _make_aware(dt: datetime) -> datetime:
+    if dt.tzinfo is None:
+        return dt.replace(tzinfo=timezone.utc)
+    return dt
 
-RECALL_THRESHOLD = 65.0   # below this = needs review
 
-
-# ── Feature extraction ────────────────────────────────────────────────────────
-
-def extract_features(events: list) -> dict:
-    """
-    Takes a list of event dicts for one user-concept pair.
-    Returns a dict of 6 computed features.
-    """
-    if not events:
-        return None
-
-    # Sort oldest → newest
-    sorted_events = sorted(events, key=lambda e: e["timestamp"])
+def get_hours_since_last(sorted_events: list) -> float:
+    last_event = sorted_events[-1]          # most recent event
+    last_ts = _make_aware(last_event["timestamp"])
     now = datetime.now(timezone.utc)
-
-    # 1. Hours since last review
-    last_event = sorted_events[-1]
-    last_ts = last_event["timestamp"]
-    if last_ts.tzinfo is None:
-        last_ts = last_ts.replace(tzinfo=timezone.utc)
-    hours_since_last = (now - last_ts).total_seconds() / 3600
-
-    # 2. Total review count
-    total_reviews = len(sorted_events)
-
-    # 3. Average score across all reviews
-    scores = [e.get("score", 0) for e in sorted_events]
-    avg_score = sum(scores) / len(scores)
-
-    # 4. Last score (most recent event)
-    last_score = sorted_events[-1].get("score", 0)
-
-    # 5. Success streak — how many of the last 3 reviews scored above 0.6
-    recent = sorted_events[-3:]
-    success_streak = sum(1 for e in recent if e.get("score", 0) >= 0.6)
-
-    # 6. Average response time in minutes
-    times = [e.get("response_time_min", e.get("response_time_sec", 0)) for e in sorted_events]
-    # if stored in seconds (old Phase 0 events), convert
-    avg_response_time = sum(times) / len(times)
-
-    return {
-        "hours_since_last": round(hours_since_last, 2),
-        "total_reviews": total_reviews,
-        "avg_score": round(avg_score, 4),
-        "last_score": round(last_score, 4),
-        "success_streak": success_streak,
-        "avg_response_time": round(avg_response_time, 2)
-    }
+    delta = now - last_ts                   # timedelta object
+    hours = delta.total_seconds() / 3600   # convert seconds → hours
+    return round(hours, 2)
 
 
-# ── Ebbinghaus decay formula ──────────────────────────────────────────────────
 
-def compute_recall_score(features: dict) -> float:
-    """
-    Estimates recall % using a weighted Ebbinghaus-inspired formula.
+def get_total_reviews(events: list) -> int:
+    return len(events)
 
-    Core idea:
-      - Base retention = last_score × avg_score (how well you know it)
-      - Decay = e^(-hours / half_life)
-      - half_life grows with more reviews and success streak
-      - Result scaled to 0–100
 
-    Returns a float between 0.0 and 100.0
-    """
-    if features is None:
+def get_avg_score(events: list) -> float:
+    scores = [e.get("score", 0) for e in events]   # get score, default 0 if missing
+    if not scores:
         return 0.0
-
-    hours = features["hours_since_last"]
-    total_reviews = features["total_reviews"]
-    avg_score = features["avg_score"]
-    last_score = features["last_score"]
-    streak = features["success_streak"]
-
-    # Base retention: weighted blend of last score and average
-    base_retention = (0.6 * last_score) + (0.4 * avg_score)
-
-    # Half-life in hours: starts at 24h, grows with reviews and streak
-    # More reviews + higher streak = slower forgetting
-    half_life = 24 * (1 + math.log1p(total_reviews)) * (1 + 0.3 * streak)
-
-    # Ebbinghaus decay: R = base × e^(-hours / half_life)
-    decay = math.exp(-hours / half_life)
-    recall = base_retention * decay * 100
-
-    return round(min(max(recall, 0.0), 100.0), 2)
+    return round(sum(scores) / len(scores), 4)
 
 
-# ── Priority label ────────────────────────────────────────────────────────────
 
-def get_priority(recall_score: float) -> str:
-    if recall_score < 40:
-        return "High"
-    elif recall_score < RECALL_THRESHOLD:
-        return "Medium"
-    else:
-        return "Low"
+def get_last_score(sorted_events: list) -> float:
+    return round(sorted_events[-1].get("score", 0), 4)
 
 
-# ── Save recall score to MongoDB ──────────────────────────────────────────────
+def get_success_streak(sorted_events: list, threshold: float = 0.6) -> int:
+    recent_3 = sorted_events[-3:]                           # last 3 events (or fewer)
+    return sum(1 for e in recent_3 if e.get("score", 0) >= threshold)
 
-def save_recall_score(user_id: str, concept_id: str, recall_score: float,
-                      features: dict, model_used: str = "formula"):
-    """
-    Upserts a recall score document into the recall_scores collection.
-    Creates it if it doesn't exist, updates it if it does.
-    """
-    col = get_collection("recall_scores")
-    doc = {
-        "user_id": user_id,
-        "concept_id": concept_id,
-        "recall_score": recall_score,
-        "priority": get_priority(recall_score),
-        "last_computed": datetime.now(timezone.utc),
-        "model_used": model_used,
-        "features": features      # store raw features too, useful for Phase 4 training
-    }
-    col.update_one(
-        {"user_id": user_id, "concept_id": concept_id},
-        {"$set": doc},
-        upsert=True
+
+def get_avg_response_time(events: list) -> float:
+    times = []
+    for e in events:
+        if "response_time_min" in e:
+            times.append(e["response_time_min"])          # already in minutes
+        elif "response_time_sec" in e:
+            times.append(e["response_time_sec"] / 60)     # convert seconds → minutes
+        # if neither field exists, skip this event (don't append 0, that skews avg)
+
+    if not times:
+        return 0.0
+    return round(sum(times) / len(times), 2)
+
+
+def extract_features(events: list) -> dict | None:
+    if not events:
+        return None   # can't compute features with zero data
+
+    # Sort events by timestamp, oldest first
+    # This is critical — features like last_score depend on order
+    sorted_events = sorted(
+        events,
+        key=lambda e: e["timestamp"]  # sort by timestamp field
     )
 
+    # Call each feature function and collect results
+    features = {
+        "hours_since_last":   get_hours_since_last(sorted_events),
+        "total_reviews":      get_total_reviews(events),
+        "avg_score":          get_avg_score(events),
+        "last_score":         get_last_score(sorted_events),
+        "success_streak":     get_success_streak(sorted_events),
+        "avg_response_time":  get_avg_response_time(events)
+    }
 
-# ── Main pipeline: run for one user ──────────────────────────────────────────
-
-def compute_scores_for_user(user_id: str):
-    """
-    Fetches all events for a user, groups by concept,
-    computes features + recall score for each, saves to recall_scores.
-    Returns a list of result dicts for display.
-    """
-    events_col = get_collection("events")
-    all_events = list(events_col.find({"user_id": user_id}, {"_id": 0}))
-
-    if not all_events:
-        return []
-
-    # Group events by concept_id
-    from collections import defaultdict
-    concept_events = defaultdict(list)
-    for e in all_events:
-        concept_events[e["concept_id"]].append(e)
-
-    results = []
-    for concept_id, events in concept_events.items():
-        features = extract_features(events)
-        if features is None:
-            continue
-        recall_score = compute_recall_score(features)
-        save_recall_score(user_id, concept_id, recall_score, features)
-        results.append({
-            "concept_id": concept_id,
-            "recall_score": recall_score,
-            "priority": get_priority(recall_score),
-            "features": features
-        })
-
-    # Sort by urgency: lowest recall first
-    results.sort(key=lambda x: x["recall_score"])
-    return results
-
-
-# ── Convenience: run for all users ───────────────────────────────────────────
-
-def compute_scores_for_all_users():
-    """
-    Runs compute_scores_for_user for every user in the users collection.
-    Called on dashboard load in Phase 3.
-    """
-    users_col = get_collection("users")
-    all_users = list(users_col.find({}, {"user_id": 1, "_id": 0}))
-    for user in all_users:
-        compute_scores_for_user(user["user_id"])
+    return features

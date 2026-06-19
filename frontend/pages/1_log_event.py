@@ -11,12 +11,11 @@ sys.path.append(os.path.join(os.path.dirname(__file__), "..", ".."))
 from backend.db import get_or_create_user, get_recent_events, insert_event
 from backend.models.event import create_event
 
-# ── Page setup ────────────────────────────────────────────────────────────────
+
 st.set_page_config(page_title="Log Event", layout="centered")
 st.title("Log Study Event")
 st.caption("Record a study session to track your recall over time.")
 
-# ── Load concepts.json ────────────────────────────────────────────────────────
 CONCEPTS_PATH = os.path.join(os.path.dirname(__file__), "..", "..", "data", "concepts.json")
 
 @st.cache_data
@@ -27,13 +26,12 @@ def load_concepts():
 concepts = load_concepts()
 concept_name_to_id = {c["name"]: c["concept_id"] for c in concepts}
 
-# ── Session state: remember logged-in user across reruns ──────────────────────
+
 if "user_id" not in st.session_state:
     st.session_state.user_id = ""
 if "user_name" not in st.session_state:
     st.session_state.user_name = ""
 
-# ── User identification ───────────────────────────────────────────────────────
 st.subheader("Who are you?")
 col1, col2 = st.columns(2)
 with col1:
@@ -56,7 +54,6 @@ if not st.session_state.user_id:
     st.info("Set your user above to start logging events.")
     st.stop()
 
-# ── Event logging form ────────────────────────────────────────────────────────
 st.divider()
 st.subheader(f"Log a session — {st.session_state.user_name}")
 
@@ -95,7 +92,7 @@ if submitted:
     st.success(f"Saved! **{concept_name}** — {event_type} — score {score:.0%}")
     st.balloons()
 
-# ── Recent event history ──────────────────────────────────────────────────────
+
 st.divider()
 st.subheader("Recent Events")
 
