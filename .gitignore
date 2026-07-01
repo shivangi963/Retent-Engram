@@ -1,3 +1,11 @@
 .env
 venv/
 __pycache__/
+models/*.pkl
+mlruns/
+ 
+# But DO commit the metadata and placeholder
+!models/model_metadata.json
+!models/.gitkeep
+mlflow.db
+mlruns/

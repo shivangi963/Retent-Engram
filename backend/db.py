@@ -167,6 +167,117 @@ def get_last_event_per_concept(user_id: str) -> dict:
         for doc in result
     }
 
+"""
+backend/db.py — Phase 5 additions
+====================================
+PASTE THESE FUNCTIONS AT THE BOTTOM OF YOUR EXISTING backend/db.py
+Do NOT replace anything already there — just add these below.
+
+These new functions support the queue page and settings.
+"""
+
+# ── Add these to the BOTTOM of backend/db.py ─────────────────────────────────
+
+
+def get_user(user_id: str) -> dict:
+    """
+    Fetches the full user document from MongoDB.
+
+    Returns the user dict (without _id field) or empty dict if not found.
+
+    Used by: 4_queue.py to show user info, daily_goal, streak
+
+    Args:
+        user_id: student's ID
+
+    Returns:
+        dict: user document or {}
+    """
+    col = get_collection("users")
+    result = col.find_one(
+        {"user_id": user_id.strip().lower()},
+        {"_id": 0}
+    )
+    return result or {}
+
+
+def update_user_field(user_id: str, field: str, value) -> bool:
+    """
+    Updates a single field on a user document.
+
+    Generic helper used for daily_goal, streak_days, last_active_date etc.
+    Avoids writing a separate function for each user field.
+
+    EXAMPLE USAGE:
+      update_user_field("shivangi_01", "daily_goal", 5)
+      update_user_field("shivangi_01", "streak_days", 7)
+
+    Args:
+        user_id: student's ID
+        field:   MongoDB field name to update
+        value:   new value
+
+    Returns:
+        bool: True if successful
+    """
+    try:
+        col = get_collection("users")
+        col.update_one(
+            {"user_id": user_id.strip().lower()},
+            {"$set": {field: value}},
+            upsert=True
+        )
+        return True
+    except Exception as e:
+        print(f"⚠️  update_user_field error: {e}")
+        return False
+
+
+def get_concepts_reviewed_today(user_id: str) -> list:
+    """
+    Returns list of concept_ids that have been reviewed today.
+
+    HOW: Reads recall_scores where last_reviewed_today = True.
+
+    Used by: 4_queue.py to show which concepts are already done today.
+
+    Args:
+        user_id: student's ID
+
+    Returns:
+        list of concept_id strings
+    """
+    col = get_collection("recall_scores")
+    docs = list(col.find(
+        {"user_id": user_id, "last_reviewed_today": True},
+        {"concept_id": 1, "_id": 0}
+    ))
+    return [d["concept_id"] for d in docs]
+
+
+def get_recent_events_for_concept(user_id: str, concept_id: str, limit: int = 10) -> list:
+    """
+    Returns the most recent events for a specific user-concept pair.
+
+    Used by: Queue page → "Recent history" expander per queue item
+    Shows the student their recent performance on this concept.
+
+    Args:
+        user_id:    student's ID
+        concept_id: which concept
+        limit:      max events to return (default 10)
+
+    Returns:
+        list of event dicts sorted newest first
+    """
+    col = get_collection("events")
+    return list(
+        col.find(
+            {"user_id": user_id, "concept_id": concept_id},
+            {"_id": 0}
+        ).sort("timestamp", -1).limit(limit)
+    )
+
 if __name__ == "__main__":
     print("Connected to:", db.name)
     print("Collections:", db.list_collection_names())

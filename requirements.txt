@@ -8,4 +8,4 @@ plotly==5.19.0
 python-dotenv==1.0.0
 scipy
 mlflow
-pickle
+lifelines

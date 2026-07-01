@@ -271,6 +271,7 @@ for _, row in filtered_df.iterrows():
         "Sessions":         int(row["sessions"]),
         "Last Reviewed":    row["last_reviewed"],
         "Avg Score":        f"{row['avg_score']:.0%}",
+        "Urgency":          f"{r.get('urgency_score', 0):.1f}" if "urgency_score" in r else "—",
     })
 
 display_df = pd.DataFrame(display_rows)
