@@ -1,6 +1,6 @@
 import math
 
-# Recall thresholds — decide priority label
+# recall thresholds to decide priority label
 HIGH_THRESHOLD   = 40.0   # below 40 = High priority (urgent review needed)
 MEDIUM_THRESHOLD = 65.0   # below 65 = Medium priority (review soon)
 # above 65 = Low priority (still well remembered)
@@ -29,7 +29,7 @@ def compute_stability(total_reviews: int, success_streak: int) -> float:
 
 def apply_decay(base_retention: float, hours_since_last: float, stability: float) -> float:
     if stability <= 0:
-        stability = 0.001   # safety guard against division by zero
+        stability = 0.001   # against division by zero
 
     decay_exponent = -hours_since_last / stability   # negative exponent
     decay_factor = math.exp(decay_exponent)          # e^(negative number) → 0 to 1
@@ -42,19 +42,16 @@ def compute_recall_score(features: dict) -> float:
     if features is None:
         return 0.0
 
-    # Extract the 4 features we need for the formula
     hours         = features["hours_since_last"]
     total_reviews = features["total_reviews"]
     avg_score     = features["avg_score"]
     last_score    = features["last_score"]
     streak        = features["success_streak"]
 
-    # Run all 3 steps
     base_retention = compute_base_retention(last_score, avg_score)
     stability      = compute_stability(total_reviews, streak)
     retention      = apply_decay(base_retention, hours, stability)
 
-    # Scale to 0–100 and clamp
     recall_score = retention * 100
     recall_score = min(100.0, max(0.0, recall_score))   # clamp to valid range
     return round(recall_score, 2)
