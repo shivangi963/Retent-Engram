@@ -15,7 +15,7 @@ def get_hours_since_last(sorted_events: list) -> float:
     last_ts = _make_aware(last_event["timestamp"])
     now = datetime.now(timezone.utc)
     delta = now - last_ts                   # timedelta object
-    hours = delta.total_seconds() / 3600   # convert seconds → hours
+    hours = delta.total_seconds() / 3600   # seconds to hours
     return round(hours, 2)
 
 
@@ -25,7 +25,7 @@ def get_total_reviews(events: list) -> int:
 
 
 def get_avg_score(events: list) -> float:
-    scores = [e.get("score", 0) for e in events]   # get score, default 0 if missing
+    scores = [e.get("score", 0) for e in events]  
     if not scores:
         return 0.0
     return round(sum(scores) / len(scores), 4)
@@ -37,7 +37,7 @@ def get_last_score(sorted_events: list) -> float:
 
 
 def get_success_streak(sorted_events: list, threshold: float = 0.6) -> int:
-    recent_3 = sorted_events[-3:]                           # last 3 events (or fewer)
+    recent_3 = sorted_events[-3:]                           # last 3 event
     return sum(1 for e in recent_3 if e.get("score", 0) >= threshold)
 
 
@@ -45,10 +45,9 @@ def get_avg_response_time(events: list) -> float:
     times = []
     for e in events:
         if "response_time_min" in e:
-            times.append(e["response_time_min"])          # already in minutes
+            times.append(e["response_time_min"])          # minutes
         elif "response_time_sec" in e:
-            times.append(e["response_time_sec"] / 60)     # convert seconds → minutes
-        # if neither field exists, skip this event (don't append 0, that skews avg)
+            times.append(e["response_time_sec"] / 60)     #seconds to minutes
 
     if not times:
         return 0.0
@@ -57,16 +56,13 @@ def get_avg_response_time(events: list) -> float:
 
 def extract_features(events: list) -> dict | None:
     if not events:
-        return None   # can't compute features with zero data
-
-    # Sort events by timestamp, oldest first
-    # This is critical — features like last_score depend on order
-    sorted_events = sorted(
+        return None   
+    
+    sorted_events = sorted(                 
         events,
-        key=lambda e: e["timestamp"]  # sort by timestamp field
+        key=lambda e: e["timestamp"]  
     )
 
-    # Call each feature function and collect results
     features = {
         "hours_since_last":   get_hours_since_last(sorted_events),
         "total_reviews":      get_total_reviews(events),

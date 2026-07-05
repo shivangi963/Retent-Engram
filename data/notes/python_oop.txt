@@ -1,0 +1,91 @@
+CONCEPT: Python OOP
+SUBJECT: Programming
+DIFFICULTY: 2
+
+DEFINITION
+Object-Oriented Programming (OOP) in Python is a paradigm that organizes software design around data (objects) and the methods that operate on them, rather than functions and logic.
+
+KEY SUBTOPICS
+
+1. Classes and Objects
+A class is a blueprint. An object is an instance of a class.
+- __init__: constructor method, called when object is created
+- self: reference to the current instance
+- Instance variables: unique to each object
+- Class variables: shared across all instances
+
+Example:
+class Student:
+    school = "VTU"  # class variable
+    def __init__(self, name, age):
+        self.name = name  # instance variable
+        self.age = age
+    def greet(self):
+        return f"Hi, I'm {self.name}"
+
+2. Four Pillars of OOP
+Encapsulation: bundling data and methods together, hiding internal details
+- Public: accessible everywhere (name)
+- Protected: convention, single underscore (_name)
+- Private: name mangling, double underscore (__name)
+
+Inheritance: child class inherits from parent class
+- Single inheritance: one parent
+- Multiple inheritance: multiple parents
+- super() calls parent class methods
+- Method Resolution Order (MRO): C3 linearization
+
+Polymorphism: same interface, different behavior
+- Method overriding: child redefines parent method
+- Duck typing: "if it walks like a duck and quacks like a duck"
+- Operator overloading: __add__, __str__, __len__, etc.
+
+Abstraction: hiding implementation details
+- Abstract class: cannot be instantiated directly
+- from abc import ABC, abstractmethod
+- Forces subclasses to implement abstract methods
+
+3. Magic Methods (Dunder Methods)
+- __init__: constructor
+- __str__: string representation (print)
+- __repr__: official string representation
+- __len__: len() function
+- __add__: + operator
+- __eq__: == comparison
+- __lt__: < comparison
+- __getitem__: indexing with []
+- __iter__ and __next__: iteration
+
+4. Properties and Decorators
+@property: creates getter without calling it as method
+@setter: creates setter for property
+@classmethod: method that receives class (cls) not instance
+@staticmethod: method that receives neither class nor instance
+
+5. Special Concepts
+- Composition: "has-a" relationship (Car has Engine)
+- Aggregation: weaker form of composition
+- Association: objects know about each other
+
+List Comprehension with OOP: [obj.method() for obj in objects]
+Generator: uses yield, memory efficient
+Context Manager: __enter__ and __exit__, used with 'with' statement
+Dataclass: @dataclass decorator auto-generates __init__, __repr__, __eq__
+
+EXAMPLE QUESTIONS
+1. What is the difference between __str__ and __repr__?
+2. Explain method resolution order (MRO) in Python.
+3. Write a Python class demonstrating all four pillars of OOP.
+4. What is the difference between @classmethod and @staticmethod?
+5. Explain duck typing in Python with an example.
+6. What is the difference between composition and inheritance?
+
+COMMON EXAM POINTS
+- Python uses late binding for default mutable arguments (gotcha!)
+- Multiple inheritance uses MRO (C3 linearization, use __mro__ to check)
+- __slots__ prevents creation of __dict__ saving memory
+- Abstract classes use ABCMeta or inherit from ABC
+- @property makes methods look like attributes
+- super() in Python 3 takes no arguments (unlike Python 2)
+- Class methods can be called on instances too
+- Python is fully object-oriented: even int, str are objects

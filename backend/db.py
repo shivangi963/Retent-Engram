@@ -278,6 +278,63 @@ def get_recent_events_for_concept(user_id: str, concept_id: str, limit: int = 10
         ).sort("timestamp", -1).limit(limit)
     )
 
+
+def get_generated_content_history(user_id: str, concept_id: str,
+                                   limit: int = 10) -> list:
+    """
+    Returns recent generated content for a user-concept pair.
+    Used by the review page to show content history.
+
+    Returns:
+        list of generated_content dicts, newest first
+    """
+    col = get_collection("generated_content")
+    return list(
+        col.find(
+            {"user_id": user_id, "concept_id": concept_id},
+            {"_id": 0}
+        ).sort("generated_at", -1).limit(limit)
+    )
+
+
+def get_all_generated_for_user(user_id: str) -> list:
+    """
+    Returns all generated content for a user across all concepts.
+    Used by history page in Phase 7.
+    """
+    col = get_collection("generated_content")
+    return list(
+        col.find({"user_id": user_id}, {"_id": 0})
+           .sort("generated_at", -1)
+    )
+
+
+def get_content_ratings_summary(user_id: str) -> dict:
+    """
+    Returns a summary of ratings per concept for the review page.
+
+    Returns:
+        dict: { concept_id: { "good": 3, "bad": 1, "unrated": 2 } }
+    """
+    col = get_collection("generated_content")
+    docs = list(col.find({"user_id": user_id}, {"concept_id": 1, "rating": 1, "_id": 0}))
+
+    summary = {}
+    for doc in docs:
+        cid = doc.get("concept_id", "")
+        rating = doc.get("rating", 0)
+        if cid not in summary:
+            summary[cid] = {"good": 0, "bad": 0, "unrated": 0}
+        if rating == 1:
+            summary[cid]["good"] += 1
+        elif rating == -1:
+            summary[cid]["bad"] += 1
+        else:
+            summary[cid]["unrated"] += 1
+
+    return summary
+
+
 if __name__ == "__main__":
     print("Connected to:", db.name)
     print("Collections:", db.list_collection_names())

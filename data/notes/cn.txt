@@ -1,0 +1,93 @@
+CONCEPT: Computer Networks
+SUBJECT: CS Core
+DIFFICULTY: 4
+
+DEFINITION
+Computer Networks are interconnected systems of devices that share resources and information. They enable communication between computers using established protocols.
+
+KEY SUBTOPICS
+
+1. OSI Model (7 Layers)
+The Open Systems Interconnection model defines network communication layers:
+- Layer 7 Application: HTTP, FTP, SMTP, DNS - user-facing protocols
+- Layer 6 Presentation: encryption, compression, data formatting
+- Layer 5 Session: establishes, manages, terminates sessions
+- Layer 4 Transport: TCP, UDP - end-to-end communication, error control
+- Layer 3 Network: IP, ICMP - routing, logical addressing
+- Layer 2 Data Link: MAC addressing, framing, error detection (Ethernet)
+- Layer 1 Physical: bits, cables, signals, hardware
+
+TCP/IP Model (4 layers):
+- Application (combines OSI 5,6,7)
+- Transport (same as OSI 4)
+- Internet (same as OSI 3)
+- Network Access (combines OSI 1,2)
+
+2. TCP vs UDP
+TCP (Transmission Control Protocol):
+- Connection-oriented (3-way handshake: SYN, SYN-ACK, ACK)
+- Reliable, ordered delivery
+- Flow control (sliding window), congestion control
+- Used for: HTTP, FTP, email
+
+UDP (User Datagram Protocol):
+- Connectionless, no handshake
+- Unreliable but fast, low overhead
+- No flow control or congestion control
+- Used for: DNS, streaming, gaming, VoIP
+
+3. IP Addressing
+IPv4: 32-bit address, 4 octets (e.g. 192.168.1.1)
+IPv6: 128-bit address, solves IPv4 exhaustion
+
+Subnetting:
+- Subnet mask divides IP into network and host parts
+- CIDR notation: 192.168.1.0/24 means 24 bits for network
+- /24 = 256 addresses, 254 usable hosts
+
+Address Classes:
+- Class A: 1.0.0.0 - 127.255.255.255 (large networks)
+- Class B: 128.0.0.0 - 191.255.255.255 (medium networks)
+- Class C: 192.0.0.0 - 223.255.255.255 (small networks)
+
+4. Routing Protocols
+- Static Routing: manually configured, no overhead
+- Dynamic Routing: routers exchange information automatically
+- RIP (Routing Information Protocol): distance vector, max 15 hops
+- OSPF (Open Shortest Path First): link state, Dijkstra's algorithm
+- BGP (Border Gateway Protocol): inter-AS routing, internet backbone
+
+5. Application Layer Protocols
+- HTTP/HTTPS: port 80/443, web browsing, stateless
+- DNS: port 53, domain name to IP resolution
+- DHCP: port 67/68, automatic IP address assignment
+- FTP: port 21, file transfer
+- SMTP: port 25, sending email
+- POP3: port 110, receiving email
+- SSH: port 22, secure remote login
+- Telnet: port 23, insecure remote login
+
+6. Network Security
+- Firewall: filters traffic based on rules
+- SSL/TLS: encrypts data in transit (HTTPS)
+- VPN: encrypted tunnel over public network
+- ARP Spoofing: attacker associates their MAC with victim's IP
+- DNS Spoofing: attacker provides false DNS responses
+- DDoS: distributed denial of service attack
+
+EXAMPLE QUESTIONS
+1. Explain the TCP 3-way handshake process.
+2. What is the difference between TCP and UDP?
+3. Explain how DNS resolution works step by step.
+4. What is subnetting and why is it used?
+5. Explain the difference between hub, switch, and router.
+6. What is ARP and how does ARP spoofing work?
+
+COMMON EXAM POINTS
+- Hub broadcasts to all ports, switch uses MAC table, router uses IP
+- NAT (Network Address Translation) allows multiple devices to share one public IP
+- HTTP is stateless - cookies and sessions are used to maintain state
+- TTL (Time To Live) prevents packets from circulating indefinitely
+- Ping uses ICMP (not TCP or UDP)
+- MAC address is 48 bits (6 bytes), burned into NIC hardware
+- Port 80=HTTP, 443=HTTPS, 22=SSH, 25=SMTP, 53=DNS, 21=FTP

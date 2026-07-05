@@ -1,0 +1,69 @@
+CONCEPT: SQL Queries
+SUBJECT: CS Core
+DIFFICULTY: 3
+
+DEFINITION
+SQL (Structured Query Language) is the standard language for managing and manipulating relational databases. It allows you to create, read, update, and delete data.
+
+KEY SUBTOPICS
+
+1. Basic SELECT Queries
+SELECT column1, column2 FROM table WHERE condition ORDER BY column LIMIT n;
+- SELECT *: selects all columns (avoid in production)
+- DISTINCT: removes duplicate rows
+- WHERE: filters rows (AND, OR, NOT, IN, BETWEEN, LIKE, IS NULL)
+- ORDER BY: ASC (default) or DESC
+- LIMIT/TOP: restricts number of rows returned
+
+2. Joins
+INNER JOIN: returns rows matching in both tables
+LEFT JOIN: all rows from left table, matched rows from right (NULL if no match)
+RIGHT JOIN: all rows from right table, matched rows from left
+FULL OUTER JOIN: all rows from both tables
+CROSS JOIN: cartesian product of both tables
+SELF JOIN: joins table with itself (for hierarchical data)
+
+3. Aggregate Functions and GROUP BY
+COUNT(*): counts all rows including NULLs
+COUNT(column): counts non-NULL values
+SUM, AVG, MAX, MIN: work on numeric columns
+GROUP BY: groups rows with same values
+HAVING: filters groups AFTER aggregation (WHERE filters before)
+
+Find average salary per department:
+SELECT dept, AVG(salary) FROM employees GROUP BY dept HAVING AVG(salary) > 50000;
+
+4. Subqueries and CTEs
+Subquery in WHERE: SELECT * FROM emp WHERE salary > (SELECT AVG(salary) FROM emp);
+Subquery in FROM: treated as derived table
+Correlated subquery: references outer query
+CTE (Common Table Expression): WITH cte_name AS (SELECT ...) SELECT * FROM cte_name;
+Window functions: ROW_NUMBER(), RANK(), DENSE_RANK(), LAG(), LEAD()
+
+5. String and Date Functions
+String: UPPER(), LOWER(), LENGTH(), SUBSTRING(), CONCAT(), TRIM(), REPLACE()
+Date: NOW(), CURDATE(), DATE_ADD(), DATEDIFF(), YEAR(), MONTH(), DAY()
+LIKE pattern: % matches any sequence, _ matches single character
+
+6. Indexes and Performance
+CREATE INDEX idx_name ON table(column);
+Explain plan: EXPLAIN SELECT ... shows how query executes
+- Full table scan: slow for large tables, no index used
+- Index scan: fast, uses existing index
+
+EXAMPLE QUESTIONS
+1. Write a query to find the second highest salary.
+2. What is the difference between WHERE and HAVING?
+3. Explain the different types of JOINs with examples.
+4. Write a query to find employees who earn more than their manager.
+5. What is a correlated subquery? Give an example.
+6. Write a query to find duplicate rows in a table.
+
+COMMON EXAM POINTS
+- Second highest salary: SELECT MAX(salary) FROM emp WHERE salary < (SELECT MAX(salary) FROM emp)
+- NULL comparisons use IS NULL not = NULL
+- RANK() leaves gaps, DENSE_RANK() does not leave gaps
+- GROUP BY must include all non-aggregate SELECT columns
+- UNION removes duplicates, UNION ALL keeps them
+- EXISTS is faster than IN for large subqueries
+- Indexes slow down INSERT/UPDATE/DELETE but speed up SELECT

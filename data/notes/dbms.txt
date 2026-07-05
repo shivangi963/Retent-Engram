@@ -1,0 +1,85 @@
+CONCEPT: Database Management Systems
+SUBJECT: CS Core
+DIFFICULTY: 3
+
+DEFINITION
+A Database Management System (DBMS) is software that interacts with users, applications, and the database itself to capture and analyze data. It allows users to create, read, update, and delete data in a database.
+
+KEY SUBTOPICS
+
+1. Relational Model
+Data is organized in tables (relations) with rows (tuples) and columns (attributes).
+- Primary Key: uniquely identifies each row in a table
+- Foreign Key: references the primary key of another table
+- Candidate Key: minimal set of attributes that uniquely identify a tuple
+- Super Key: any set of attributes that uniquely identify a tuple
+- Referential Integrity: foreign key value must exist in referenced table
+
+2. SQL (Structured Query Language)
+DDL (Data Definition Language): CREATE, ALTER, DROP, TRUNCATE
+DML (Data Manipulation Language): SELECT, INSERT, UPDATE, DELETE
+DCL (Data Control Language): GRANT, REVOKE
+TCL (Transaction Control Language): COMMIT, ROLLBACK, SAVEPOINT
+
+Important SQL Clauses:
+- WHERE: filters rows based on condition
+- GROUP BY: groups rows sharing a value
+- HAVING: filters groups (used with GROUP BY)
+- ORDER BY: sorts result set
+- JOIN types: INNER JOIN, LEFT JOIN, RIGHT JOIN, FULL OUTER JOIN, CROSS JOIN
+- Aggregate functions: COUNT, SUM, AVG, MAX, MIN
+
+3. Normalization
+Process of organizing data to reduce redundancy and improve integrity.
+- 1NF: atomic values, no repeating groups
+- 2NF: 1NF + no partial dependencies (all non-key attributes fully depend on primary key)
+- 3NF: 2NF + no transitive dependencies
+- BCNF: stricter than 3NF, every determinant must be a candidate key
+- 4NF: no multi-valued dependencies
+- 5NF: no join dependencies
+
+4. Transactions and ACID Properties
+A transaction is a unit of work performed on a database.
+ACID Properties:
+- Atomicity: all operations succeed or all fail (all-or-nothing)
+- Consistency: database moves from one valid state to another
+- Isolation: concurrent transactions appear to execute serially
+- Durability: committed transactions persist even after system failure
+
+Concurrency Control:
+- Lock-based: shared lock (read) and exclusive lock (write)
+- Two-Phase Locking (2PL): growing phase acquires locks, shrinking phase releases
+- Timestamp Ordering: uses timestamps to order transactions
+- MVCC: multiple versions of data for concurrent reads
+
+5. Indexing
+Indexes speed up data retrieval at the cost of additional storage.
+- B-Tree Index: balanced tree, supports range queries, most common
+- B+ Tree Index: all data in leaf nodes, linked list of leaves
+- Hash Index: fast for equality lookups, poor for range queries
+- Clustered Index: data rows stored in index order (one per table)
+- Non-clustered Index: separate structure pointing to data rows
+
+6. ER Model
+Entity-Relationship Model for database design:
+- Entity: real-world object (Student, Course)
+- Attribute: property of entity (name, age)
+- Relationship: association between entities (Student ENROLLS Course)
+- Cardinality: 1:1, 1:N, M:N relationships
+- Weak Entity: depends on strong entity for identification
+
+EXAMPLE QUESTIONS
+1. Explain ACID properties with examples.
+2. What is the difference between 2NF and 3NF?
+3. Write a SQL query to find second highest salary.
+4. Explain two-phase locking protocol.
+5. What is the difference between clustered and non-clustered indexes?
+6. What are the differences between DELETE, DROP, and TRUNCATE?
+
+COMMON EXAM POINTS
+- TRUNCATE is DDL (cannot be rolled back), DELETE is DML (can be rolled back)
+- B+ Trees are preferred over B-Trees for database indexes
+- Phantom read problem occurs at REPEATABLE READ isolation level
+- Serializability is the gold standard for transaction isolation
+- Lossless join decomposition preserves original data when tables are joined back
+- Functional dependency: if A→B, knowing A tells you B uniquely

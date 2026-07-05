@@ -1,0 +1,96 @@
+CONCEPT: Data Structures and Algorithms
+SUBJECT: CS Core
+DIFFICULTY: 5
+
+DEFINITION
+Data Structures are ways of organizing and storing data so that it can be accessed and modified efficiently. Algorithms are step-by-step procedures for solving computational problems.
+
+KEY SUBTOPICS
+
+1. Arrays and Strings
+- Static array: fixed size, O(1) access, O(n) insert/delete
+- Dynamic array: resizes automatically (Python list, Java ArrayList)
+- String operations: concatenation O(n), substring O(n), search O(n)
+- Two-pointer technique: used for sorted array problems
+- Sliding window: used for subarray/substring problems
+
+2. Linked Lists
+- Singly linked: each node has data + next pointer
+- Doubly linked: each node has data + next + prev pointer
+- Circular linked: last node points back to head
+- Operations: insert O(1) at head, delete O(1) with pointer, search O(n)
+- Common problems: detect cycle (Floyd's algorithm), reverse list, find middle
+
+3. Stack and Queue
+Stack (LIFO - Last In First Out):
+- Push: O(1), Pop: O(1), Peek: O(1)
+- Applications: function call stack, undo operations, expression evaluation
+- Monotonic stack: maintain increasing/decreasing order
+
+Queue (FIFO - First In First Out):
+- Enqueue: O(1), Dequeue: O(1)
+- Priority Queue (Heap): highest priority element dequeued first
+- Deque: insertion/deletion at both ends
+
+4. Trees
+Binary Tree: each node has at most 2 children
+Binary Search Tree (BST): left < root < right
+- Search: O(log n) average, O(n) worst
+- Insert: O(log n) average
+- In-order traversal of BST gives sorted sequence
+
+AVL Tree: self-balancing BST, height difference <= 1
+Red-Black Tree: self-balancing, used in Java TreeMap
+Heap: complete binary tree, max-heap or min-heap
+- Insert: O(log n), Extract-max/min: O(log n), Build heap: O(n)
+
+5. Graphs
+Representations:
+- Adjacency Matrix: O(V²) space, O(1) edge lookup
+- Adjacency List: O(V+E) space, efficient for sparse graphs
+
+Traversal:
+- BFS (Breadth First Search): uses queue, shortest path in unweighted
+- DFS (Depth First Search): uses stack/recursion, cycle detection
+
+Algorithms:
+- Dijkstra's: shortest path, non-negative weights, O((V+E) log V)
+- Bellman-Ford: shortest path, handles negative weights, O(VE)
+- Floyd-Warshall: all-pairs shortest path, O(V³)
+- Kruskal's: minimum spanning tree, sort edges, union-find
+- Prim's: minimum spanning tree, greedy, O(E log V)
+- Topological Sort: linear ordering of DAG vertices
+
+6. Sorting Algorithms
+- Bubble Sort: O(n²) average, O(n) best (adaptive), stable
+- Selection Sort: O(n²) all cases, not stable
+- Insertion Sort: O(n²) average, O(n) best, stable, good for small/nearly sorted
+- Merge Sort: O(n log n) all cases, stable, requires O(n) space
+- Quick Sort: O(n log n) average, O(n²) worst, in-place, not stable
+- Heap Sort: O(n log n) all cases, in-place, not stable
+- Counting Sort: O(n+k), only integers in range [0,k]
+
+7. Dynamic Programming
+DP solves problems by breaking into overlapping subproblems.
+- Memoization: top-down, recursive with cache
+- Tabulation: bottom-up, iterative
+Classic problems:
+- Fibonacci, Longest Common Subsequence, 0/1 Knapsack
+- Longest Increasing Subsequence, Matrix Chain Multiplication
+- Coin Change, Edit Distance, Rod Cutting
+
+EXAMPLE QUESTIONS
+1. Explain quicksort with average and worst case time complexity.
+2. How does Floyd's cycle detection algorithm work?
+3. What is the difference between BFS and DFS? When to use each?
+4. Explain Dijkstra's algorithm with a graph example.
+5. What is dynamic programming? Solve the 0/1 Knapsack problem.
+6. Explain AVL tree rotations (LL, LR, RL, RR).
+
+COMMON EXAM POINTS
+- Merge sort is the only comparison sort that is O(n log n) guaranteed
+- Hash table average O(1) search but O(n) worst case with collisions
+- Heap is NOT a BST - parent is just >= children (max-heap)
+- DFS uses O(h) space where h=height, BFS uses O(w) where w=max width
+- Greedy doesn't always give optimal solution (unlike DP)
+- Amortized O(1) for dynamic array append despite occasional O(n) resize

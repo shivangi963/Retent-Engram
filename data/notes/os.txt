@@ -1,0 +1,78 @@
+CONCEPT: Operating Systems
+SUBJECT: CS Core
+DIFFICULTY: 4
+
+DEFINITION
+An Operating System (OS) is system software that manages computer hardware and software resources and provides common services for computer programs. It acts as an intermediary between the user and the computer hardware.
+
+KEY SUBTOPICS
+
+1. Process Management
+A process is a program in execution. The OS manages processes through:
+- Process Creation: fork() system call creates child processes
+- Process Scheduling: decides which process runs on the CPU
+- Process Termination: releases resources when process ends
+- Process Communication: IPC mechanisms like pipes, message queues, shared memory
+- Process States: New, Ready, Running, Waiting, Terminated
+
+2. CPU Scheduling Algorithms
+- FCFS (First Come First Serve): simplest, non-preemptive, suffers convoy effect
+- SJF (Shortest Job First): optimal average waiting time, may cause starvation
+- Round Robin: each process gets a time quantum, preemptive, good for time-sharing
+- Priority Scheduling: each process has priority, starvation possible
+- Multilevel Queue: processes grouped by type (system, interactive, batch)
+
+3. Memory Management
+The OS manages RAM allocation for processes:
+- Contiguous Allocation: each process gets one contiguous block
+- Paging: divides memory into fixed-size pages, eliminates external fragmentation
+- Segmentation: divides memory into logical segments (code, data, stack)
+- Virtual Memory: allows processes to use more memory than physically available
+- Page Replacement Algorithms: FIFO, LRU, Optimal
+- Thrashing: excessive paging causing performance degradation
+
+4. Deadlock
+Deadlock occurs when processes wait indefinitely for resources held by each other.
+Four Necessary Conditions (Coffman conditions):
+- Mutual Exclusion: resources cannot be shared
+- Hold and Wait: process holds resource while waiting for another
+- No Preemption: resources cannot be forcibly taken
+- Circular Wait: circular chain of processes waiting
+
+Deadlock Handling:
+- Prevention: eliminate one of the four conditions
+- Avoidance: Banker's Algorithm - check safe state before granting resources
+- Detection and Recovery: allow deadlock then recover by killing processes
+- Ignorance: Ostrich Algorithm (used by most OS)
+
+5. File System
+The OS organizes files on storage devices:
+- File Allocation Methods: Contiguous, Linked, Indexed
+- Directory Structures: Single-level, Two-level, Tree-structured
+- File System Types: FAT32, NTFS, ext4
+- Disk Scheduling: FCFS, SSTF, SCAN, C-SCAN, LOOK
+
+6. Synchronization
+Multiple processes accessing shared data can cause race conditions.
+- Critical Section Problem: only one process in critical section at a time
+- Mutex: binary lock for mutual exclusion
+- Semaphore: integer variable for synchronization (binary and counting)
+- Monitor: high-level synchronization construct
+- Classic Problems: Producer-Consumer, Reader-Writer, Dining Philosophers
+
+EXAMPLE QUESTIONS
+1. What are the four necessary conditions for deadlock?
+2. Explain the difference between paging and segmentation.
+3. Compare FCFS and Round Robin scheduling algorithms.
+4. What is thrashing and how can it be prevented?
+5. Explain the Banker's Algorithm with an example.
+6. What is the difference between a process and a thread?
+
+COMMON EXAM POINTS
+- Banker's Algorithm requires n processes and m resource types
+- Round Robin with quantum=1 gives maximum context switches
+- LRU page replacement is optimal in practice but expensive to implement
+- Semaphore wait() is also called P() and signal() is called V()
+- A thread is a lightweight process sharing the same memory space
+- Fork bomb is a denial-of-service attack using process creation
+- Spooling uses disk as buffer between CPU and slow I/O devices
