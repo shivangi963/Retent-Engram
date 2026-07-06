@@ -1,3 +1,76 @@
+"""
+backend/ml/train.py
+=====================
+PHASE 4 — Model Training, Evaluation, and Saving
+
+PURPOSE
+-------
+This script:
+  1. Loads training data (real + synthetic combined)
+  2. Splits into train/test sets
+  3. Trains two models:
+       a. Logistic Regression (baseline — simple, interpretable)
+       b. XGBoost (main model — more powerful, non-linear)
+  4. Evaluates both using AUC and Brier Score
+  5. Logs everything to MLflow (parameters, metrics, models)
+  6. Saves the best model to models/recall_model.pkl
+  7. Saves metadata (which model was chosen, what metrics it got)
+
+HOW TO RUN THIS SCRIPT
+-----------------------
+  cd Retent-Engram
+  python scripts/run_training.py
+
+  OR directly:
+  python -m backend.ml.train
+
+WHAT IS AUC?
+------------
+  AUC = Area Under the ROC Curve
+  - Measures how well the model RANKS concepts by recall probability
+  - AUC = 0.5 → random guessing (no better than coin flip)
+  - AUC = 1.0 → perfect ranking (always puts "likely forgot" above "likely remembered")
+  - AUC > 0.70 → acceptable for this use case
+  - AUC > 0.80 → good
+
+WHAT IS BRIER SCORE?
+---------------------
+  Brier Score = mean((predicted_prob - actual_label)²)
+  - Measures accuracy of PROBABILITY ESTIMATES (not just ranking)
+  - Brier = 0.0 → perfect probability estimates
+  - Brier = 0.25 → as bad as always predicting 0.5 (random)
+  - Brier < 0.20 → acceptable
+  - Brier < 0.15 → good
+
+WHAT IS MLFLOW?
+----------------
+  MLflow is an experiment tracking tool. When you run training,
+  MLflow records:
+    - The parameters you used (n_estimators, learning_rate, etc.)
+    - The metrics your model achieved (AUC, Brier)
+    - The trained model itself
+  You can then view all your experiments in a web UI:
+    mlflow ui
+    → open http://localhost:5000
+
+  This is useful for:
+    - Comparing multiple training runs
+    - Reproducing a specific run later
+    - VTU report: you can take screenshots of the MLflow dashboard
+
+WHAT IS TRAIN/TEST SPLIT?
+--------------------------
+  We split data into:
+    - Train set (80%): model LEARNS from this
+    - Test set  (20%): model is EVALUATED on this (never seen during training)
+  This prevents "overfitting" — model memorizing data instead of learning patterns.
+
+  IMPORTANT: We use shuffle=False for time-based data because
+  training on future data to predict past events would be "cheating".
+  But since our data_prep.py already handles temporal ordering internally,
+  a regular shuffle split is fine here.
+"""
+
 import sys
 import os
 sys.path.append(os.path.join(os.path.dirname(__file__), "..", ".."))
@@ -8,6 +81,7 @@ import numpy as np
 import pandas as pd
 from datetime import datetime, timezone
 
+# ML libraries
 from sklearn.linear_model import LogisticRegression
 from sklearn.model_selection import train_test_split, cross_val_score
 from sklearn.preprocessing import StandardScaler
@@ -23,10 +97,16 @@ import mlflow
 import mlflow.sklearn
 import mlflow.xgboost
 
+# Our modules
 from backend.ml.data_prep import build_training_dataset_from_mongodb, get_X_y, FEATURE_COLUMNS
 from backend.ml.synthetic_data import get_combined_training_data
 
 
+# =============================================================================
+# PATHS — where to save models
+# =============================================================================
+
+# Go up two levels from backend/ml/ → project root → models/
 PROJECT_ROOT = os.path.join(os.path.dirname(__file__), "..", "..")
 MODELS_DIR   = os.path.join(PROJECT_ROOT, "models")
 os.makedirs(MODELS_DIR, exist_ok=True)   # create models/ folder if it doesn't exist
@@ -37,26 +117,73 @@ XGBOOST_MODEL_PATH  = os.path.join(MODELS_DIR, "recall_model_xgboost.pkl")
 BEST_MODEL_PATH     = os.path.join(MODELS_DIR, "recall_model.pkl")   # used by predict.py
 METADATA_PATH       = os.path.join(MODELS_DIR, "model_metadata.json")
 
+# MLflow experiment name (visible in `mlflow ui`)
 MLFLOW_EXPERIMENT = "retent-engram-recall-prediction"
 
 
+# =============================================================================
+# MLFLOW SETUP
+# =============================================================================
+
 def setup_mlflow():
-    
-    #Uses SQLite backend — required for MLflow . Creates mlflow.db in your project root automatically.
-    
+    """
+    Uses SQLite backend — required for MLflow versions >= 2.13
+    Creates mlflow.db in your project root automatically.
+    """
     mlflow_db_path = os.path.abspath(os.path.join(PROJECT_ROOT, "mlflow.db"))
     mlflow.set_tracking_uri(f"sqlite:///{mlflow_db_path}")
     mlflow.set_experiment(MLFLOW_EXPERIMENT)
 
 
+# =============================================================================
+# MODEL 1 — Logistic Regression (Baseline)
+# =============================================================================
 
 def train_logistic_regression(X_train, y_train, X_test, y_test) -> dict:
-   
+    """
+    Trains a Logistic Regression classifier and evaluates it.
+
+    WHY LOGISTIC REGRESSION AS BASELINE?
+      - Very fast to train (< 1 second)
+      - Results are interpretable (you can see which features matter)
+      - Gives a performance floor — XGBoost must beat this to be worth using
+      - Required by the project plan for fair model comparison
+
+    PIPELINE EXPLAINED:
+      We use a sklearn Pipeline to chain preprocessing + model:
+        Step 1: StandardScaler — normalizes features to mean=0, std=1
+          WHY? Logistic Regression is sensitive to feature scale.
+          hours_since_last can be 0–1000, avg_score is 0–1.
+          Without scaling, large-range features dominate.
+        Step 2: LogisticRegression — the actual classifier
+
+      Pipeline ensures scaling is fitted on TRAIN data only (not test data),
+      which prevents data leakage.
+
+    PARAMETERS:
+      max_iter=1000: logistic regression needs enough iterations to converge
+      C=1.0: regularization strength (higher = less regularization)
+      class_weight='balanced': handles imbalanced labels (more 1s than 0s)
+
+    LOGGED TO MLFLOW:
+      - Parameters: model_type, C, max_iter
+      - Metrics: AUC, Brier score, accuracy
+      - Model: the fitted Pipeline object
+
+    Args:
+        X_train, y_train: training features and labels
+        X_test, y_test:   test features and labels
+
+    Returns:
+        dict with keys: model, auc, brier, accuracy, model_path
+    """
     print("\n" + "─" * 50)
     print("Training Model 1: Logistic Regression (Baseline)")
     print("─" * 50)
 
     with mlflow.start_run(run_name="logistic_regression", nested=True):
+        # ── Define the pipeline ───────────────────────────────────────────────
+        # StandardScaler: z-score normalization
         #   z = (x - mean) / std
         #   After scaling: each feature has mean=0 and std=1
         scaler = StandardScaler()
@@ -69,12 +196,14 @@ def train_logistic_regression(X_train, y_train, X_test, y_test) -> dict:
             random_state=42
         )
 
+        # Pipeline: scaler → logistic regression
         # fit() on pipeline calls scaler.fit_transform(X) then lr.fit(X_scaled, y)
         pipeline = SklearnPipeline([
             ("scaler", scaler),
             ("classifier", lr)
         ])
 
+        # ── Log parameters to MLflow ─────────────────────────────────────────
         mlflow.log_param("model_type",    "logistic_regression")
         mlflow.log_param("C",             1.0)
         mlflow.log_param("max_iter",      1000)
@@ -83,10 +212,12 @@ def train_logistic_regression(X_train, y_train, X_test, y_test) -> dict:
         mlflow.log_param("n_train",       len(X_train))
         mlflow.log_param("n_test",        len(X_test))
 
+        # ── Train ─────────────────────────────────────────────────────────────
         pipeline.fit(X_train, y_train)
 
-        # predict_proba returns [[P(0), P(1)], .....] for each sample
-        # P(1) = probability of being recalled = column index 1
+        # ── Evaluate ─────────────────────────────────────────────────────────
+        # predict_proba returns [[P(0), P(1)], ...] for each sample
+        # We want P(1) = probability of being recalled = column index 1
         y_prob  = pipeline.predict_proba(X_test)[:, 1]
         y_pred  = pipeline.predict(X_test)
 
@@ -94,6 +225,7 @@ def train_logistic_regression(X_train, y_train, X_test, y_test) -> dict:
         brier     = brier_score_loss(y_test, y_prob)
         accuracy  = accuracy_score(y_test, y_pred)
 
+        # ── Log metrics to MLflow ─────────────────────────────────────────────
         mlflow.log_metric("auc",       auc)
         mlflow.log_metric("brier",     brier)
         mlflow.log_metric("accuracy",  accuracy)

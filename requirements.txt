@@ -8,4 +8,8 @@ plotly==5.19.0
 python-dotenv==1.0.0
 scipy
 mlflow
-lifelines
+requests==2.31.0
+sentence-transformers==2.6.1
+faiss-cpu==1.8.0
+torch==2.2.0
+pdfplumber==0.10.3

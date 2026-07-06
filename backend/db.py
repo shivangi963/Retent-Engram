@@ -342,4 +342,3 @@ if __name__ == "__main__":
         "get_collection works:",
         get_collection("events").name
     )
-    

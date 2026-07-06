@@ -319,8 +319,37 @@ with right_col:
 
         with fb_col2:
             if st.button("👎 Bad", key="thumbs_down", use_container_width=True):
-                rate_content(user_id, selected_cid, selected_type, -1)
-                st.warning("Got it. Try regenerating for different content.")
+                st.session_state["show_reason_picker"] = True
+
+        if st.session_state.get("show_reason_picker", False):
+            from backend.prompt_optimizer import (
+                FEEDBACK_REASONS,
+                save_feedback_with_reason
+            )
+            reason_labels = {
+                "too_easy":     "Too basic / easy",
+                "too_hard":     "Too advanced / hard",
+                "off_topic":    "Off-topic or irrelevant",
+                "wrong_format": "Wrong format",
+                "inaccurate":   "Factually wrong",
+                "too_long":     "Too long / verbose",
+                "too_short":    "Too brief",
+                "generic":      "Too generic"
+            }
+            reason_choice = st.selectbox(
+                "What was wrong with it?",
+                options=list(reason_labels.values()),
+                key="reason_picker"
+            )
+            reason_code = {v: k for k, v in reason_labels.items()}[reason_choice]
+
+            if st.button("Submit Feedback", key="submit_reason"):
+                save_feedback_with_reason(
+                    user_id, selected_cid, selected_type, -1, reason_code
+                )
+                st.session_state["show_reason_picker"] = False
+                st.warning("Feedback saved. Next generation will be improved.")
+                st.rerun()
 
         with fb_col3:
             if st.button("🔄 Regenerate", key="regen", use_container_width=True):
@@ -552,27 +581,6 @@ def parse_quiz_content(content: str) -> list:
 
 
 def render_coding_task(content: str):
-    """
-    Renders a coding task with code block and hidden expected output.
-
-    FORMAT EXPECTED FROM LLM:
-      CODING TASK: Concept — Topic
-
-      PROBLEM:
-      [description]
-
-      INPUT:
-      [example]
-
-      EXPECTED OUTPUT:
-      [output]
-
-      HINT:
-      [hint]
-    """
-    st.markdown("### 💻 Coding Task")
-
-    # Parse sections
     sections = {}
     current_section = None
     current_lines   = []
@@ -582,7 +590,7 @@ def render_coding_task(content: str):
         upper    = stripped.upper()
 
         if upper.startswith("CODING TASK:"):
-            continue   # skip title line
+            continue   
 
         matched_section = None
         for keyword in ["PROBLEM:", "INPUT:", "EXPECTED OUTPUT:", "HINT:"]:
@@ -620,13 +628,62 @@ def render_coding_task(content: str):
 
     # Python code editor area
     st.markdown("**✍️ Write your solution:**")
-    st.code_input = st.text_area(
+
+    editor_key = f"code_editor_{hash(content) % 10000}"
+    user_code  = st.text_area(
         "Python code",
         value="# Write your solution here\n\n",
-        height=200,
-        key=f"code_editor_{hash(content) % 10000}"
+        height=220,
+        key=editor_key
     )
 
+    run_col, clear_col = st.columns([1, 3])
+    with run_col:
+        run_clicked = st.button(
+            "▶ Run Code",
+            key=f"run_{editor_key}",
+            type="primary",
+            use_container_width=True
+        )
+
+    if run_clicked and user_code.strip():
+        from backend.sandbox import run_code, compare_output
+
+        with st.spinner("⚙️ Running your code in sandbox..."):
+            result = run_code(user_code)
+
+        # Show output
+        st.markdown("**Output:**")
+        if result["timed_out"]:
+            st.error(f"⏱️ Timed out after 10 seconds. Check for infinite loops.")
+        elif result["error"]:
+            st.error(f"❌ Error:\n```\n{result['error']}\n```")
+            if result["stdout"]:
+                st.code(result["stdout"], language="text")
+        else:
+            st.code(result["stdout"] or "(no output)", language="text")
+
+             # Compare to expected if we have it
+            expected = sections.get("EXPECTED OUTPUT", "")
+            if expected and result["stdout"]:
+                comparison = compare_output(result["stdout"], expected)
+                if comparison["passed"]:
+                    st.success(comparison["message"])
+                elif comparison["similarity"] > 0.8:
+                    st.warning(comparison["message"])
+                else:
+                    st.error(comparison["message"])
+                    with st.expander("See expected vs actual"):
+                        ec, ac = st.columns(2)
+                        with ec:
+                            st.caption("Expected:")
+                            st.code(expected, language="text")
+                        with ac:
+                            st.caption("Your output:")
+                            st.code(result["stdout"], language="text")
+
+    elif run_clicked:
+        st.warning("Write some code first!")
+
     if not sections:
-        # Fallback: show raw content in code block
         st.code(content, language="markdown")

@@ -378,7 +378,45 @@ with st.expander("Study Activity Pattern (when do you study?)"):
     fig_heat = build_activity_heatmap(raw_events)
     st.plotly_chart(fig_heat, use_container_width=True)
 
+with st.expander("🕸️ Concept Dependency Graph"):
+    st.caption(
+        "Shows how concepts are connected. "
+        "Weaker foundation concepts (red) may affect dependent ones."
+    )
 
+    from backend.dependency_graph import (
+        build_dependency_graph_figure,
+        get_concepts_at_risk
+    )
+
+    # Build and show graph
+    fig_graph = build_dependency_graph_figure(pipeline_results)
+    st.plotly_chart(fig_graph, use_container_width=True)
+
+    # Show at-risk concepts if any
+    urgent_ids = [
+        r["concept_id"] for r in pipeline_results
+        if r.get("priority") == "High"
+    ]
+
+    if urgent_ids:
+        at_risk = get_concepts_at_risk(urgent_ids)
+
+        if at_risk:
+            st.markdown("**⚠️ Concepts at risk due to weak foundations:**")
+
+            for cid, info in at_risk.items():
+                causes = [
+                    id_to_name.get(c, c)
+                    for c in info["at_risk_because"]
+                ]
+                name = id_to_name.get(cid, cid)
+
+                st.caption(
+                    f"• **{name}** — depends on weak: "
+                    f"{', '.join(causes)}"
+                )
+                
 st.divider()
 st.caption(
     f"Last refreshed: {datetime.now().strftime('%d %b %Y, %I:%M %p')}  •  "
