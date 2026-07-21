@@ -1,4 +1,4 @@
-# 🧠 Retent Engram
+#  Retent Engram
 
 **A personal project I built to stop forgetting what I study.**
 
@@ -111,49 +111,6 @@ ollama pull mistral
 ollama serve
 ```
 
----
-
-## Project Structure
-
-```
-Retent-Engram/
-├── frontend/
-│   ├── main.py              # Home + login
-│   └── pages/
-│       ├── 1_log_event.py   # Log a study session
-│       ├── 2_dashboard.py   # Recall score charts
-│       ├── 3_review.py      # AI content generation
-│       ├── 4_queue.py       # Daily review queue
-│       ├── 5_history.py     # Event timeline + CSV export
-│       ├── 6_settings.py    # User preferences
-│       └── 7_about.py       # Project info
-│
-├── backend/
-│   ├── db.py                # MongoDB helpers
-│   ├── scheduler.py         # Urgency scoring + queue logic
-│   └── ml/
-│       ├── features.py      # Feature extraction
-│       ├── scorer.py        # Ebbinghaus formula
-│       ├── train.py         # XGBoost + Logistic Regression training
-│       ├── predict.py       # Model inference
-│       └── pipeline.py      # End-to-end recall pipeline
-│
-├── rag/
-│   ├── ingest.py            # Chunk notes → FAISS index
-│   └── generate.py          # Retrieve context → prompt → generate
-│
-├── data/
-│   ├── concepts.json        # Concept definitions
-│   └── notes/               # My concept text files
-│
-├── models/                  # Trained .pkl files (gitignored)
-├── scripts/
-│   └── run_training.py      # One-command model training
-└── .streamlit/
-    └── config.toml          # Dark theme settings
-```
-
----
 
 ## What I Learned Building This
 
@@ -169,16 +126,6 @@ Retent-Engram/
   a backend auth system
 - **Ebbinghaus memory science** — the math behind spaced repetition and why half-life
   based models outperform fixed-interval schedules
-
----
-
-## What I'd Improve Next
-
-- [ ] PDF ingestion — auto-parse notes PDFs instead of writing .txt files manually
-- [ ] Code execution sandbox — run coding tasks inside the app and check output
-- [ ] Better LLM prompting — use thumbs-down ratings to iteratively improve prompts
-- [ ] Multi-device sync — currently MongoDB is local; make it work across devices
-- [ ] Concept dependency graph — flag "Process Management" when "OS" is urgent
 
 ---
 
