@@ -147,9 +147,11 @@ def simulate_student_concept_events(
             true_recall = current_recall * decay
 
             # Add noise: score = true_recall ± noise
-            noise = random.gauss(0, SCORE_NOISE)  # Gaussian noise
-            score = true_recall + noise
-            score = max(0.0, min(1.0, score))  # clamp to [0, 1]
+            noise = random.gauss(0, SCORE_NOISE)
+            # Add a small baseline — students rarely score absolute 0 on something they've seen
+            baseline = 0.2
+            score = baseline + (true_recall * 0.8) + noise
+            score = max(0.05, min(1.0, score))
 
         # Response time: good students take less time (negative correlation with score)
         # Base: 30 minutes. Better score → faster response (less time needed)
@@ -174,8 +176,13 @@ def simulate_student_concept_events(
 
         # Update state for next iteration
         last_review_time = current_time
-        current_recall = score  # new recall = what they just scored
-
+       # Don't let recall collapse to zero — simulate spaced repetition benefit
+        # A review boosts base retention, not just reflects current score
+        review_boost = 0.1 * (1 - current_recall)   # each review helps a bit
+        current_recall = min(
+            current_recall * decay + score * 0.4 + review_boost,
+            0.95
+        )
         # Advance time by 1–7 days for next review
         gap_hours = random.randint(24, 168)   # 1–7 days
         current_time = current_time + timedelta(hours=gap_hours)

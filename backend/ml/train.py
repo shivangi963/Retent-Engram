@@ -275,7 +275,7 @@ def train_logistic_regression(X_train, y_train, X_test, y_test) -> dict:
 # MODEL 2 — XGBoost (Main Model)
 # =============================================================================
 
-def train_xgboost(X_train, y_train, X_test, y_test) -> dict:
+def train_xgboost(X_train, y_train, X_test, y_test, scale_pos_weight=1) -> dict:
     """
     Trains an XGBoost classifier and evaluates it.
 
@@ -334,7 +334,7 @@ def train_xgboost(X_train, y_train, X_test, y_test) -> dict:
             colsample_bytree=0.8,
             min_child_weight=3,      # minimum samples per leaf (reduces overfitting)
             gamma=0.1,               # minimum loss reduction to make a split
-            scale_pos_weight=1,      # balance classes (adjust if very imbalanced)
+            scale_pos_weight=int(y_train[y_train==0].sum() / max(y_train[y_train==1].sum(), 1)),      # balance classes (adjust if very imbalanced)
             eval_metric="logloss",
             early_stopping_rounds=20,
             random_state=42,
@@ -585,6 +585,14 @@ def run_training_pipeline():
         random_state=42,
         stratify=y      # maintain label balance in both splits
     )
+    # Calculate class weight ratio
+    neg_count = int((y_train == 0).sum())
+    pos_count = int((y_train == 1).sum())
+    spw = neg_count // max(pos_count, 1)
+    print(f"Class balance — Forgot: {neg_count}, Recalled: {pos_count}, scale_pos_weight: {spw}")
+
+    # Then pass spw into train_xgboost():
+    xgb_results = train_xgboost(X_train, y_train, X_test, y_test, scale_pos_weight=spw)
 
     print(f"\n📊  Dataset split:")
     print(f"    Train: {len(X_train)} rows  |  "

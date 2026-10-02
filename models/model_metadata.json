@@ -1,0 +1,23 @@
+{
+  "active_model": "xgboost",
+  "trained_at": "2026-10-02T10:04:46.636622+00:00",
+  "xgboost": {
+    "auc": 0.9454,
+    "brier": 0.005,
+    "accuracy": 0.995
+  },
+  "logistic_regression": {
+    "auc": 0.9397,
+    "brier": 0.0589,
+    "accuracy": 0.925
+  },
+  "feature_columns": [
+    "hours_since_last",
+    "total_reviews",
+    "avg_score",
+    "last_score",
+    "success_streak",
+    "avg_response_time"
+  ],
+  "recall_threshold": 0.6
+}
