@@ -1,15 +1,15 @@
 {
-  "active_model": "xgboost",
-  "trained_at": "2026-10-02T10:04:46.636622+00:00",
+  "active_model": "logistic_regression",
+  "trained_at": "2026-10-02T14:22:40.847545+00:00",
   "xgboost": {
-    "auc": 0.9454,
-    "brier": 0.005,
-    "accuracy": 0.995
+    "auc": 0.5,
+    "brier": 0.0338,
+    "accuracy": 0.965
   },
   "logistic_regression": {
-    "auc": 0.9397,
-    "brier": 0.0589,
-    "accuracy": 0.925
+    "auc": 0.651,
+    "brier": 0.2189,
+    "accuracy": 0.635
   },
   "feature_columns": [
     "hours_since_last",

@@ -231,7 +231,7 @@ with right:
         st.session_state["gen_result"] = None
 
     if st.session_state.get("gen_concept_id") and st.session_state.get("gen_result") is None:
-        spinner_msg = "Retrieving from your notes and asking the model… (can take 30–90s on CPU)"
+        spinner_msg = "Retrieving from your notes and asking the model…"
         with st.spinner(spinner_msg):
             result = generate_content(
                 user_id=user_id,

@@ -128,11 +128,13 @@ def simulate_student_concept_events(
     current_recall = 0.0   # 0% before first review
 
     for review_idx in range(n_reviews):
+        decay = 1.0
 
         if review_idx == 0:
             # First review: student starts with no memory, scores based on difficulty
             score = random.uniform(0.3, 0.7)  # first exposure score
         else:
+           
             # Subsequent reviews: score based on Ebbinghaus recall at this moment
             hours_elapsed = (current_time - last_review_time).total_seconds() / 3600
 
@@ -179,10 +181,7 @@ def simulate_student_concept_events(
        # Don't let recall collapse to zero — simulate spaced repetition benefit
         # A review boosts base retention, not just reflects current score
         review_boost = 0.1 * (1 - current_recall)   # each review helps a bit
-        current_recall = min(
-            current_recall * decay + score * 0.4 + review_boost,
-            0.95
-        )
+        current_recall = min(current_recall * decay + score * 0.4 + review_boost, 0.95)
         # Advance time by 1–7 days for next review
         gap_hours = random.randint(24, 168)   # 1–7 days
         current_time = current_time + timedelta(hours=gap_hours)

@@ -27,8 +27,49 @@ desktop.ini
 .idea/
 *.swp
 
+.ipynb_checkpoints/# ─── Python ──────────────────────────────────────────────────
+venv/
+__pycache__/
+*.pyc
+*.pyo
+*.pyd
+.Python
+*.egg-info/
+dist/
+build/
+
+# ─── Environment ─────────────────────────────────────────────
+.env
+
+# ─── ML Models (large binary files) ─────────────────────────
+models/*.pkl
+models/faiss_index/
+
+# Keep the metadata file and placeholder
+!models/model_metadata.json
+!models/.gitkeep
+
+# ─── MLflow ──────────────────────────────────────────────────
+mlruns/
+mlflow.db
+
+# ─── OS files ────────────────────────────────────────────────
+.DS_Store
+Thumbs.db
+desktop.ini
+
+# ─── IDE ─────────────────────────────────────────────────────
+.vscode/
+.idea/
+*.swp
+
+# ─── Jupyter ─────────────────────────────────────────────────
 .ipynb_checkpoints/
 *.ipynb
+
+# ─── Logs ────────────────────────────────────────────────────
+*.log
+logs/
 
 *.log
 logs/
