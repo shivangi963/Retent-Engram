@@ -1,56 +1,32 @@
 # .streamlit/config.toml
 # ========================
-# Streamlit theme and layout configuration for Retent Engram
+# Streamlit theme for Retent Engram.
+# The app injects its own CSS (frontend/components/theme.py) for full control
+# over cards, tables, etc. — these are the base tokens native widgets read
+# (sliders, checkboxes, the select dropdown highlight, code blocks, ...).
 #
-# HOW TO APPLY:
-#   Place this file at: Retent-Engram/.streamlit/config.toml
-#   Streamlit reads it automatically on startup — no code needed.
-#
-# RESTART REQUIRED:
-#   After changing this file, stop and restart:
-#   Ctrl+C → streamlit run frontend/main.py
+# RESTART REQUIRED after changing this file:
+#   Ctrl+C -> streamlit run frontend/main.py
 
 [theme]
-
-# Primary accent color — used for buttons, sliders, checkboxes
-# This indigo/purple color gives the app a professional, modern feel
-primaryColor = "#6C63FF"
-
-# Main background — dark charcoal (not pure black, easier on eyes)
-backgroundColor = "#0E1117"
-
-# Sidebar and card background — slightly lighter than main bg
-secondaryBackgroundColor = "#1E2130"
-
-# All text color — near-white for contrast on dark backgrounds
-textColor = "#FAFAFA"
-
-# Font family — sans serif is clean and readable for technical content
+base = "light"
+primaryColor = "#2563EB"
+backgroundColor = "#F4F7FC"
+secondaryBackgroundColor = "#FFFFFF"
+textColor = "#0F1F3D"
 font = "sans serif"
-
+baseRadius = "medium"
 
 [server]
-
-# Port the app runs on (default 8501)
 port = 8501
-
-# Allow connections from any host (needed if running on a VM or WSL)
-# Set to false if only running locally for security
 headless = false
-
-# Disable usage statistics sent to Streamlit
-# Good practice for a student project on college network
 gatherUsageStats = false
 
-
 [browser]
-
-# Tab title prefix — shows in browser tab
 serverAddress = "localhost"
 
-
 [runner]
-
-# Disable the "rerun on file save" magic in production
-# Keep true during development (auto-reloads when you save code)
 magicEnabled = true
+
+[client]
+toolbarMode = "minimal"
