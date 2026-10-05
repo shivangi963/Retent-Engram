@@ -1,87 +1,82 @@
-import sys
-import os
-sys.path.append(os.path.join(os.path.dirname(__file__), "..", ".."))
+"""
+backend/ml/features.py
+======================
+Turns a learner's event history for ONE concept into 6 numbers.
 
-from backend.time_utils import make_aware, utc_now
+THE FIX IN THIS VERSION
+-----------------------
+`as_of` is the moment the prediction is made for.
+
+  * In the app (inference):  as_of = None  -> "now".
+  * In training:             as_of = timestamp of the NEXT review.
+
+Before, training also used "now", so for a row built from an old event the
+`hours_since_last` feature was "hours since that event until today" (thousands of
+hours) instead of "the gap before the next review".  The model therefore could not
+learn that waiting longer makes you forget - it even learned the opposite.
+"""
+from datetime import datetime, timezone
+
+FEATURE_NAMES = [
+    "hours_since_last", "total_reviews", "avg_score",
+    "last_score", "success_streak", "avg_response_time",
+]
+SUCCESS_THRESHOLD = 0.6
 
 
-def get_hours_since_last(sorted_events: list, reference_time=None) -> float:
-
-    last_event = sorted_events[-1]          # most recent event
-    last_ts = make_aware(last_event["timestamp"])
-
-    if reference_time is None:
-        reference_time = utc_now()          # live inference: "as of now"
-    else:
-        reference_time = make_aware(reference_time)
-
-    delta = reference_time - last_ts        # timedelta object
-    hours = delta.total_seconds() / 3600    # seconds to hours
-    return round(hours, 2)
-
-
-def get_total_reviews(events: list) -> int:
-    return len(events)
+def _to_dt(value):
+    """datetime | ISO string -> aware UTC datetime (None if unusable).
+    Phase-0 events stored the timestamp as an ISO *string*, newer ones as datetime."""
+    if isinstance(value, datetime):
+        return value if value.tzinfo else value.replace(tzinfo=timezone.utc)
+    if isinstance(value, str):
+        try:
+            dt = datetime.fromisoformat(value.replace("Z", "+00:00"))
+            return dt if dt.tzinfo else dt.replace(tzinfo=timezone.utc)
+        except ValueError:
+            return None
+    return None
 
 
-def get_avg_score(events: list) -> float:
-    scores = [e.get("score", 0) for e in events]
-    if not scores:
+_make_aware = _to_dt          # old name, kept so existing imports keep working
+
+
+def _score(event) -> float:
+    try:
+        return min(1.0, max(0.0, float(event.get("score", 0) or 0)))
+    except (TypeError, ValueError):
         return 0.0
-    return round(sum(scores) / len(scores), 4)
 
 
-def get_last_score(sorted_events: list) -> float:
-    return round(sorted_events[-1].get("score", 0), 4)
+def _minutes(event):
+    if event.get("response_time_min") is not None:
+        return float(event["response_time_min"])
+    if event.get("response_time_sec") is not None:
+        return float(event["response_time_sec"]) / 60.0
+    return None
 
 
-def get_success_streak(sorted_events: list, threshold: float = 0.6) -> int:
-    recent_3 = sorted_events[-3:]                           # last 3 event
-    return sum(1 for e in recent_3 if e.get("score", 0) >= threshold)
-
-
-def get_avg_response_time(events: list) -> float:
-    times = []
-    for e in events:
-        if "response_time_min" in e:
-            times.append(e["response_time_min"])          # minutes
-        elif "response_time_sec" in e:
-            times.append(e["response_time_sec"] / 60)     #seconds to minutes
-
-    if not times:
-        return 0.0
-    return round(sum(times) / len(times), 2)
-
-
-ACTIVE_RECALL_TYPES = {"quiz", "coding", "review"}
-
-
-def get_active_recall_ratio(events: list) -> float:
-    
-    if not events:
-        return 0.0
-    active = sum(1 for e in events if e.get("event_type") in ACTIVE_RECALL_TYPES)
-    return round(active / len(events), 4)
-
-
-def extract_features(events: list, reference_time=None) -> dict | None:
-    
-    if not events:
+def extract_features(events: list, as_of=None):
+    """events: all events for one user+concept (any order).  Returns dict or None."""
+    dated = [(_to_dt(e.get("timestamp")), e) for e in events]
+    dated = [(t, e) for t, e in dated if t is not None]
+    if not dated:
         return None
+    dated.sort(key=lambda x: x[0])
+    ordered = [e for _, e in dated]
+    last_ts = dated[-1][0]
 
-    sorted_events = sorted(
-        events,
-        key=lambda e: e["timestamp"]
-    )
+    ref = _to_dt(as_of) if as_of is not None else datetime.now(timezone.utc)
+    hours = max((ref - last_ts).total_seconds() / 3600.0, 0.0)
 
-    features = {
-        "hours_since_last":     get_hours_since_last(sorted_events, reference_time),
-        "total_reviews":        get_total_reviews(events),
-        "avg_score":            get_avg_score(events),
-        "last_score":           get_last_score(sorted_events),
-        "success_streak":       get_success_streak(sorted_events),
-        "avg_response_time":    get_avg_response_time(events),
-        "active_recall_ratio":  get_active_recall_ratio(events),
+    scores = [_score(e) for e in ordered]
+    times = [m for m in (_minutes(e) for e in ordered) if m is not None]
+
+    return {
+        "hours_since_last":  round(hours, 2),
+        "total_reviews":     len(ordered),
+        "avg_score":         round(sum(scores) / len(scores), 4),
+        "last_score":        round(scores[-1], 4),
+        "success_streak":    sum(1 for s in scores[-3:] if s >= SUCCESS_THRESHOLD),
+        "avg_response_time": round(sum(times) / len(times), 2) if times else 0.0,
     }
-
-    return features

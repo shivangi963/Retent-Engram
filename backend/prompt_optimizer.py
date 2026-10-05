@@ -96,7 +96,8 @@ def save_feedback_with_reason(user_id: str, concept_id: str,
         if reason_code and reason_code in FEEDBACK_REASONS:
             update_fields["feedback_reason"] = reason_code
 
-        col.update_one(
+        # find_one_and_update accepts sort=; update_one(..., sort=...) does not exist in PyMongo 4.6
+        col.find_one_and_update(
             {
                 "user_id":      user_id,
                 "concept_id":   concept_id,

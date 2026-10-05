@@ -15,4 +15,4 @@ torch==2.2.0
 pdfplumber==0.10.3
 lifelines 
 langchain
-transformers==4.38.0
+transformers==4.38.0 

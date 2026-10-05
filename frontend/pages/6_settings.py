@@ -19,6 +19,7 @@ sys.path.append(os.path.join(os.path.dirname(__file__), "..", ".."))
 
 from backend.db import get_collection
 from backend.scheduler import set_daily_goal, get_or_create_daily_goal
+from rag.store import status_text
 
 # =============================================================================
 # PAGE SETUP

@@ -1,157 +1,73 @@
-import sys
-import os
-sys.path.append(os.path.join(os.path.dirname(__file__), "..", ".."))
+"""
+backend/ml/data_prep.py
+=======================
+Builds labelled training rows from event history.
 
-from datetime import datetime, timezone
+Row i  = "what we knew right after review i"  ->  label = did review i+1 go well?
+Features are computed AS OF the time of review i+1, so `hours_since_last` is the
+gap the learner actually waited (this matches Section 4.8 of the report:
+"the time gap measured to the next review").
+"""
 from collections import defaultdict
 import pandas as pd
 
-from backend.db import get_collection
-from backend.ml.features import extract_features
+from backend.ml.features import extract_features, _to_dt, FEATURE_NAMES
 
-
-# A score >= this threshold at the NEXT review = "recalled" (label = 1)
-# A score <  this threshold                    = "forgot"  (label = 0)
-RECALL_THRESHOLD = 0.6
-
-
-def _make_aware(dt: datetime) -> datetime:
-    """Adds UTC timezone to naive datetimes from MongoDB."""
-    if dt.tzinfo is None:
-        return dt.replace(tzinfo=timezone.utc)
-    return dt
+RECALL_THRESHOLD = 0.6                      # next score >= 0.6  ->  "recalled"
+FEATURE_COLUMNS = list(FEATURE_NAMES)
+LABEL_COLUMN = "label"
+GROUP_COLUMN = "_user_id"                   # used to keep one learner out of both train and test
 
 
 def extract_labeled_rows_for_concept(events: list) -> list:
-    
-#Takes all events for one user-concept pair and produces labeled training rows.
-    if len(events) < 2:
-        # Can't make labels with only 1 event
-        return []
-
-    # in chronological order
-    sorted_events = sorted(events, key=lambda e: e["timestamp"])
-
+    ordered = [e for e in events if _to_dt(e.get("timestamp")) is not None]
+    ordered.sort(key=lambda e: _to_dt(e["timestamp"]))
     rows = []
-
-    #len-1: 0, 1, 2, ..., N-2
-    for i in range(len(sorted_events) - 1):
-
-        #all events from index 0 up to and including index i
-        history = sorted_events[: i + 1]   # [0, 1, ..., i]
-
-        # The NEXT event
-        next_event = sorted_events[i + 1]
-
-        # Compute features from the history (calls features.py)
-        features = extract_features(history)
-
-        if features is None:
-            continue 
-
-        # Determine label recall at next review
-        next_score = next_event.get("score", 0)
-        label = 1 if next_score >= RECALL_THRESHOLD else 0
-
-        row = {
-            # The 6 features (inputs to the model)
-            "hours_since_last":   features["hours_since_last"],
-            "total_reviews":      features["total_reviews"],
-            "avg_score":          features["avg_score"],
-            "last_score":         features["last_score"],
-            "success_streak":     features["success_streak"],
-            "avg_response_time":  features["avg_response_time"],
-
-            # prediction 
-            "label": label,
-
-            # Metadata for debugging
-            "_user_id":       next_event.get("user_id", ""),
-            "_concept_id":    next_event.get("concept_id", ""),
-            "_next_score":    next_score,
-            "_review_index":  i
-        }
-
-        rows.append(row)
-
+    for i in range(len(ordered) - 1):
+        nxt = ordered[i + 1]
+        feats = extract_features(ordered[: i + 1], as_of=nxt["timestamp"])
+        if feats is None:
+            continue
+        next_score = float(nxt.get("score", 0) or 0)
+        rows.append({
+            **feats,
+            LABEL_COLUMN: int(next_score >= RECALL_THRESHOLD),
+            GROUP_COLUMN: str(nxt.get("user_id", "")),
+            "_concept_id": nxt.get("concept_id", ""),
+        })
     return rows
 
 
 def build_training_dataset_from_mongodb() -> pd.DataFrame:
-# Queries MongoDB, groups events by (user_id, concept_id), and builds a complete training dataset
-
-    events_col = get_collection("events")
-
-    all_events = list(events_col.find({}, {"_id": 0}))
+    """Real rows from MongoDB.  Returns an empty frame (never raises) if the DB is
+    unreachable or there is not enough history yet."""
+    try:
+        from backend.db import get_collection
+        all_events = list(get_collection("events").find({}, {"_id": 0}))
+    except Exception as exc:                                    # DB down, etc.
+        print(f"  Could not read events from MongoDB ({exc}); using synthetic data only.")
+        return pd.DataFrame()
 
     if not all_events:
-        print("No events found in MongoDB. Run the app and log some events first.")
+        print("  No events in MongoDB yet.")
         return pd.DataFrame()
-
-    print(f"Fetched {len(all_events)} total events from MongoDB")
 
     grouped = defaultdict(list)
-    for event in all_events:
-        key = (event.get("user_id", ""), event.get("concept_id", ""))
-        grouped[key].append(event)
+    for e in all_events:
+        grouped[(e.get("user_id", ""), e.get("concept_id", ""))].append(e)
 
-    print(f"Found {len(grouped)} unique user-concept pairs")
+    rows, skipped = [], 0
+    for events in grouped.values():
+        r = extract_labeled_rows_for_concept(events)
+        rows.extend(r) if r else None
+        skipped += 0 if r else 1
 
-    all_rows = []
-    skipped = 0
-
-    for (user_id, concept_id), events in grouped.items():
-        rows = extract_labeled_rows_for_concept(events)
-        if rows:
-            all_rows.extend(rows)
-        else:
-            skipped += 1  # not enough events for this pair
-
-    print(f"Extracted {len(all_rows)} training rows")
-    print(f"Skipped {skipped} pairs (< 2 events each)")
-
-    if not all_rows:
-        print("No training rows extracted. Need more event data.")
-        return pd.DataFrame()
-
-    df = pd.DataFrame(all_rows)
-
-    # Print class balance (how many 1s vs 0s)
-    label_counts = df["label"].value_counts()
-    total = len(df)
-    print(f"\n Label distribution:")
-    print(f"    Recalled  (1): {label_counts.get(1, 0)} ({label_counts.get(1, 0)/total*100:.1f}%)")
-    print(f"    Forgot    (0): {label_counts.get(0, 0)} ({label_counts.get(0, 0)/total*100:.1f}%)")
-
-    return df
-
-
-FEATURE_COLUMNS = [
-    "hours_since_last",
-    "total_reviews",
-    "avg_score",
-    "last_score",
-    "success_streak",
-    "avg_response_time"
-]
-
-LABEL_COLUMN = "label"
+    print(f"  Real data: {len(all_events)} events, {len(grouped)} learner-concept pairs "
+          f"-> {len(rows)} labelled rows ({skipped} pairs have < 2 events)")
+    return pd.DataFrame(rows)
 
 
 def get_X_y(df: pd.DataFrame):
- #   Splits a training DataFrame into features (X) and labels (y).
- #   X = numpy array of shape (n_samples, 6)
- #   y = numpy array of shape (n_samples,) with values 0 or 1
-
     if df.empty:
-        raise ValueError("DataFrame is empty — cannot split into X and y")
-
-    # Check all required columns exist
-    missing = [col for col in FEATURE_COLUMNS if col not in df.columns]
-    if missing:
-        raise ValueError(f"Missing feature columns: {missing}")
-
-    X = df[FEATURE_COLUMNS].values    # shape: (n_samples, 6)
-    y = df[LABEL_COLUMN].values        # shape: (n_samples,)
-
-    return X, y
+        raise ValueError("empty training frame")
+    return df[FEATURE_COLUMNS].values, df[LABEL_COLUMN].values

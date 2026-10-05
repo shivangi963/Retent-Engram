@@ -37,10 +37,10 @@ concepts = concepts_by_id()
 # ── system status pill (compact — full detail lives in Settings) ────────────
 checks = all_checks()
 n_ok = sum(1 for c in checks if c[2])
-status_pill = (pill("All systems ready", "green", dot=True) if n_ok == len(checks)
-               else pill(f"{n_ok}/{len(checks)} services ready", "amber", dot=True))
+#status_pill = (pill("All systems ready", "green", dot=True) if n_ok == len(checks)
+ #              else pill(f"{n_ok}/{len(checks)} services ready", "amber", dot=True))
 
-page_header("Dashboard", f"Your live knowledge health overview, {user_name}.", right=status_pill)
+#page_header("Dashboard", f"Your live knowledge health overview, {user_name}.", right=status_pill)
 
 # ── data ──────────────────────────────────────────────────────────────────
 with st.spinner("Computing your latest recall scores…"):

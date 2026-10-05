@@ -8,6 +8,7 @@ from datetime import datetime, timezone
 sys.path.append(os.path.join(os.path.dirname(__file__), "..", ".."))
 
 from backend.ml.pipeline import compute_scores_for_user
+from rag.store import status_text
 from backend.db import (
     get_recall_scores,
     get_event_counts_by_concept,

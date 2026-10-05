@@ -1,642 +1,214 @@
 """
 backend/ml/train.py
-=====================
-PHASE 4 — Model Training, Evaluation, and Saving
+===================
+Trains Logistic Regression (baseline) and a boosted-tree model (XGBoost) and only
+PROMOTES a model to models/recall_model.pkl if it passes a sanity gate.
 
-PURPOSE
--------
-This script:
-  1. Loads training data (real + synthetic combined)
-  2. Splits into train/test sets
-  3. Trains two models:
-       a. Logistic Regression (baseline — simple, interpretable)
-       b. XGBoost (main model — more powerful, non-linear)
-  4. Evaluates both using AUC and Brier Score
-  5. Logs everything to MLflow (parameters, metrics, models)
-  6. Saves the best model to models/recall_model.pkl
-  7. Saves metadata (which model was chosen, what metrics it got)
-
-HOW TO RUN THIS SCRIPT
------------------------
-  cd Retent-Engram
-  python scripts/run_training.py
-
-  OR directly:
-  python -m backend.ml.train
-
-WHAT IS AUC?
-------------
-  AUC = Area Under the ROC Curve
-  - Measures how well the model RANKS concepts by recall probability
-  - AUC = 0.5 → random guessing (no better than coin flip)
-  - AUC = 1.0 → perfect ranking (always puts "likely forgot" above "likely remembered")
-  - AUC > 0.70 → acceptable for this use case
-  - AUC > 0.80 → good
-
-WHAT IS BRIER SCORE?
----------------------
-  Brier Score = mean((predicted_prob - actual_label)²)
-  - Measures accuracy of PROBABILITY ESTIMATES (not just ranking)
-  - Brier = 0.0 → perfect probability estimates
-  - Brier = 0.25 → as bad as always predicting 0.5 (random)
-  - Brier < 0.20 → acceptable
-  - Brier < 0.15 → good
-
-WHAT IS MLFLOW?
-----------------
-  MLflow is an experiment tracking tool. When you run training,
-  MLflow records:
-    - The parameters you used (n_estimators, learning_rate, etc.)
-    - The metrics your model achieved (AUC, Brier)
-    - The trained model itself
-  You can then view all your experiments in a web UI:
-    mlflow ui
-    → open http://localhost:5000
-
-  This is useful for:
-    - Comparing multiple training runs
-    - Reproducing a specific run later
-    - VTU report: you can take screenshots of the MLflow dashboard
-
-WHAT IS TRAIN/TEST SPLIT?
---------------------------
-  We split data into:
-    - Train set (80%): model LEARNS from this
-    - Test set  (20%): model is EVALUATED on this (never seen during training)
-  This prevents "overfitting" — model memorizing data instead of learning patterns.
-
-  IMPORTANT: We use shuffle=False for time-based data because
-  training on future data to predict past events would be "cheating".
-  But since our data_prep.py already handles temporal ordering internally,
-  a regular shuffle split is fine here.
+What changed and why
+--------------------
+1. Features are timed correctly (see features.py).
+2. Train/test split is by LEARNER (GroupShuffleSplit), so a student's rows never sit
+   in both sets.  The report (Sec 4.8) promises per-learner splits.
+3. XGBoost gets monotonic constraints: recall can never RISE with more hours since the
+   last review, and never FALL with a better last/average score.  This is domain
+   knowledge written into the model.
+4. SANITY GATE - a model is used by the app only if
+      - recall falls as the gap grows (checked on several typical learners), and
+      - it clearly separates recalled/forgotten on held-out learners (AUC >= 0.70).
+   If nothing passes, no model file is written and the app uses the memory model
+   (backend/ml/scorer.py).  The dashboard can no longer show 65% for a topic you
+   last touched 114 days ago.
+5. MLflow is optional - training never fails because of it.
 """
-
-import sys
-import os
-sys.path.append(os.path.join(os.path.dirname(__file__), "..", ".."))
-
+import contextlib
 import json
 import pickle
-import numpy as np
-import pandas as pd
 from datetime import datetime, timezone
 
-# ML libraries
+import numpy as np
+from sklearn.ensemble import HistGradientBoostingClassifier
 from sklearn.linear_model import LogisticRegression
-from sklearn.model_selection import train_test_split, cross_val_score
+from sklearn.metrics import accuracy_score, brier_score_loss, roc_auc_score
+from sklearn.model_selection import GroupShuffleSplit
+from sklearn.pipeline import Pipeline
 from sklearn.preprocessing import StandardScaler
-from sklearn.metrics import (
-    roc_auc_score,
-    brier_score_loss,
-    accuracy_score,
-    classification_report
-)
-from sklearn.pipeline import Pipeline as SklearnPipeline
-import xgboost as xgb
-import mlflow
-import mlflow.sklearn
-import mlflow.xgboost
 
-# Our modules
-from backend.ml.data_prep import build_training_dataset_from_mongodb, get_X_y, FEATURE_COLUMNS
+from backend.config import MODELS_DIR, MODEL_PATH, MODEL_META_PATH, ROOT
+from backend.ml.data_prep import (
+    build_training_dataset_from_mongodb, FEATURE_COLUMNS, LABEL_COLUMN, GROUP_COLUMN,
+)
 from backend.ml.synthetic_data import get_combined_training_data
 
+MIN_AUC = 0.70
+# +1: higher feature -> higher recall.  -1: higher feature -> lower recall.
+MONOTONE = {"hours_since_last": -1, "avg_score": +1, "last_score": +1}
 
-# =============================================================================
-# PATHS — where to save models
-# =============================================================================
-
-# Go up two levels from backend/ml/ → project root → models/
-PROJECT_ROOT = os.path.join(os.path.dirname(__file__), "..", "..")
-MODELS_DIR   = os.path.join(PROJECT_ROOT, "models")
-os.makedirs(MODELS_DIR, exist_ok=True)   # create models/ folder if it doesn't exist
-
-# File paths
-LOGISTIC_MODEL_PATH = os.path.join(MODELS_DIR, "recall_model_logistic.pkl")
-XGBOOST_MODEL_PATH  = os.path.join(MODELS_DIR, "recall_model_xgboost.pkl")
-BEST_MODEL_PATH     = os.path.join(MODELS_DIR, "recall_model.pkl")   # used by predict.py
-METADATA_PATH       = os.path.join(MODELS_DIR, "model_metadata.json")
-
-# MLflow experiment name (visible in `mlflow ui`)
-MLFLOW_EXPERIMENT = "retent-engram-recall-prediction"
+GATE_HOURS = [1, 6, 24, 72, 168, 336, 720, 1440]
+GATE_LEARNERS = [   # typical learners (everything except hours_since_last)
+    dict(total_reviews=1, avg_score=0.60, last_score=0.60, success_streak=1, avg_response_time=20),
+    dict(total_reviews=3, avg_score=0.70, last_score=0.75, success_streak=2, avg_response_time=20),
+    dict(total_reviews=6, avg_score=0.85, last_score=0.90, success_streak=3, avg_response_time=15),
+    dict(total_reviews=2, avg_score=0.40, last_score=0.35, success_streak=0, avg_response_time=25),
+]
 
 
-# =============================================================================
-# MLFLOW SETUP
-# =============================================================================
-
-def setup_mlflow():
-    """
-    Uses SQLite backend — required for MLflow versions >= 2.13
-    Creates mlflow.db in your project root automatically.
-    """
-    mlflow_db_path = os.path.abspath(os.path.join(PROJECT_ROOT, "mlflow.db"))
-    mlflow.set_tracking_uri(f"sqlite:///{mlflow_db_path}")
-    mlflow.set_experiment(MLFLOW_EXPERIMENT)
-
-
-# =============================================================================
-# MODEL 1 — Logistic Regression (Baseline)
-# =============================================================================
-
-def train_logistic_regression(X_train, y_train, X_test, y_test) -> dict:
-    """
-    Trains a Logistic Regression classifier and evaluates it.
-
-    WHY LOGISTIC REGRESSION AS BASELINE?
-      - Very fast to train (< 1 second)
-      - Results are interpretable (you can see which features matter)
-      - Gives a performance floor — XGBoost must beat this to be worth using
-      - Required by the project plan for fair model comparison
-
-    PIPELINE EXPLAINED:
-      We use a sklearn Pipeline to chain preprocessing + model:
-        Step 1: StandardScaler — normalizes features to mean=0, std=1
-          WHY? Logistic Regression is sensitive to feature scale.
-          hours_since_last can be 0–1000, avg_score is 0–1.
-          Without scaling, large-range features dominate.
-        Step 2: LogisticRegression — the actual classifier
-
-      Pipeline ensures scaling is fitted on TRAIN data only (not test data),
-      which prevents data leakage.
-
-    PARAMETERS:
-      max_iter=1000: logistic regression needs enough iterations to converge
-      C=1.0: regularization strength (higher = less regularization)
-      class_weight='balanced': handles imbalanced labels (more 1s than 0s)
-
-    LOGGED TO MLFLOW:
-      - Parameters: model_type, C, max_iter
-      - Metrics: AUC, Brier score, accuracy
-      - Model: the fitted Pipeline object
-
-    Args:
-        X_train, y_train: training features and labels
-        X_test, y_test:   test features and labels
-
-    Returns:
-        dict with keys: model, auc, brier, accuracy, model_path
-    """
-    print("\n" + "─" * 50)
-    print("Training Model 1: Logistic Regression (Baseline)")
-    print("─" * 50)
-
-    with mlflow.start_run(run_name="logistic_regression", nested=True):
-        # ── Define the pipeline ───────────────────────────────────────────────
-        # StandardScaler: z-score normalization
-        #   z = (x - mean) / std
-        #   After scaling: each feature has mean=0 and std=1
-        scaler = StandardScaler()
-
-        # LogisticRegression: outputs P(recalled=1 | features)
-        lr = LogisticRegression(
-            max_iter=1000,
-            C=1.0,
-            class_weight="balanced",  # compensate if labels are imbalanced
-            random_state=42
-        )
-
-        # Pipeline: scaler → logistic regression
-        # fit() on pipeline calls scaler.fit_transform(X) then lr.fit(X_scaled, y)
-        pipeline = SklearnPipeline([
-            ("scaler", scaler),
-            ("classifier", lr)
-        ])
-
-        # ── Log parameters to MLflow ─────────────────────────────────────────
-        mlflow.log_param("model_type",    "logistic_regression")
-        mlflow.log_param("C",             1.0)
-        mlflow.log_param("max_iter",      1000)
-        mlflow.log_param("class_weight",  "balanced")
-        mlflow.log_param("n_features",    X_train.shape[1])
-        mlflow.log_param("n_train",       len(X_train))
-        mlflow.log_param("n_test",        len(X_test))
-
-        # ── Train ─────────────────────────────────────────────────────────────
-        pipeline.fit(X_train, y_train)
-
-        # ── Evaluate ─────────────────────────────────────────────────────────
-        # predict_proba returns [[P(0), P(1)], ...] for each sample
-        # We want P(1) = probability of being recalled = column index 1
-        y_prob  = pipeline.predict_proba(X_test)[:, 1]
-        y_pred  = pipeline.predict(X_test)
-
-        auc       = roc_auc_score(y_test, y_prob)
-        brier     = brier_score_loss(y_test, y_prob)
-        accuracy  = accuracy_score(y_test, y_pred)
-
-        # ── Log metrics to MLflow ─────────────────────────────────────────────
-        mlflow.log_metric("auc",       auc)
-        mlflow.log_metric("brier",     brier)
-        mlflow.log_metric("accuracy",  accuracy)
-
-        # ── Cross-validation (5-fold) ─────────────────────────────────────────
-        # Cross-validation = train/evaluate 5 times on different splits
-        # Gives a more reliable estimate of real performance
-        cv_scores = cross_val_score(pipeline, X_train, y_train,
-                                    cv=5, scoring="roc_auc")
-        cv_mean = cv_scores.mean()
-        cv_std  = cv_scores.std()
-        mlflow.log_metric("cv_auc_mean", cv_mean)
-        mlflow.log_metric("cv_auc_std",  cv_std)
-
-        # ── Log model to MLflow ───────────────────────────────────────────────
-        mlflow.sklearn.log_model(pipeline, "logistic_model")
-
-        # ── Save locally ─────────────────────────────────────────────────────
-        with open(LOGISTIC_MODEL_PATH, "wb") as f:
-            pickle.dump(pipeline, f)
-
-        # ── Print results ─────────────────────────────────────────────────────
-        print(f"  AUC:          {auc:.4f}  (target > 0.70)")
-        print(f"  Brier Score:  {brier:.4f} (target < 0.20)")
-        print(f"  Accuracy:     {accuracy:.4f}")
-        print(f"  CV AUC:       {cv_mean:.4f} ± {cv_std:.4f}")
-        print(f"\n  Feature coefficients (importance):")
-        # Extract the actual LR model from inside the pipeline
-        lr_model = pipeline.named_steps["classifier"]
-        for feat, coef in zip(FEATURE_COLUMNS, lr_model.coef_[0]):
-            direction = "↑ helps recall" if coef > 0 else "↓ hurts recall"
-            print(f"    {feat:<25} = {coef:+.4f}  ({direction})")
-
-        print(f"\n  📁 Saved to: {LOGISTIC_MODEL_PATH}")
-
-    return {
-        "model":      pipeline,
-        "auc":        auc,
-        "brier":      brier,
-        "accuracy":   accuracy,
-        "cv_auc":     cv_mean,
-        "model_path": LOGISTIC_MODEL_PATH
-    }
+# --------------------------------------------------------------------------- gate
+def run_gate(predict_proba) -> dict:
+    """predict_proba(X) -> P(recalled).  Returns {"passed": bool, "problems": [...]}"""
+    problems = set()
+    for learner in GATE_LEARNERS:
+        X = np.array([[h] + [learner[c] for c in FEATURE_COLUMNS[1:]] for h in GATE_HOURS], float)
+        p = np.asarray(predict_proba(X))
+        if any(p[i + 1] > p[i] + 0.02 for i in range(len(p) - 1)):
+            problems.add("recall goes UP as time since last review grows")
+        if p[0] - p[-1] < 0.12:
+            problems.add("recall barely changes between 1 hour and 60 days")
+    return {"passed": not problems, "problems": sorted(problems)}
 
 
-# =============================================================================
-# MODEL 2 — XGBoost (Main Model)
-# =============================================================================
+# ------------------------------------------------------------------------- models
+def _constraints():
+    return [MONOTONE.get(c, 0) for c in FEATURE_COLUMNS]
 
-def train_xgboost(X_train, y_train, X_test, y_test, scale_pos_weight=1) -> dict:
-    """
-    Trains an XGBoost classifier and evaluates it.
 
-    WHY XGBOOST?
-      XGBoost = eXtreme Gradient Boosting
-      - Builds an ensemble of decision trees
-      - Each tree corrects the mistakes of the previous one
-      - Handles non-linear relationships (e.g. forgetting is exponential, not linear)
-      - Works well with tabular data (our 6 features are tabular)
-      - Usually outperforms Logistic Regression on structured data
-      - Recommended in the project plan as the "main model"
+def _fallback_boosted(X_tr, y_tr, cst):
+    model = HistGradientBoostingClassifier(
+        max_depth=3, learning_rate=0.06, max_iter=300, monotonic_cst=cst,
+        early_stopping=False, random_state=42)
+    model.fit(X_tr, y_tr)
+    return "gradient_boosting", model
 
-    HOW XGBOOST WORKS (simplified):
-      1. Start with a simple prediction (e.g. predict the average recall for everyone)
-      2. Compute "errors" (how wrong was the prediction?)
-      3. Train a decision tree to predict the errors
-      4. Update predictions by adding the tree's outputs (scaled by learning_rate)
-      5. Repeat steps 2–4 n_estimators times
-      Each iteration reduces errors a little more.
 
-    KEY PARAMETERS EXPLAINED:
-      n_estimators=100:    number of trees to build
-                           More trees = better (up to a point), slower
-      max_depth=4:         how deep each tree can grow
-                           Deeper = more complex patterns, risk of overfitting
-      learning_rate=0.1:   how much each tree updates predictions
-                           Smaller = more trees needed but smoother
-      subsample=0.8:       use 80% of training data per tree (prevents overfitting)
-      colsample_bytree=0.8: use 80% of features per tree (prevents overfitting)
-      use_label_encoder=False: suppress deprecation warning
-      eval_metric="logloss": training loss to minimize
-
-    EARLY STOPPING:
-      We use eval_set to monitor validation loss during training.
-      If validation loss doesn't improve for 20 rounds, training stops.
-      This prevents overfitting without having to manually tune n_estimators.
-
-    Args:
-        X_train, y_train: training features and labels
-        X_test, y_test:   test features and labels
-
-    Returns:
-        dict with keys: model, auc, brier, accuracy, model_path
-    """
-    print("\n" + "─" * 50)
-    print("Training Model 2: XGBoost (Main Model)")
-    print("─" * 50)
-
-    with mlflow.start_run(run_name="xgboost", nested=True):
-        # ── Define XGBoost model ──────────────────────────────────────────────
+def make_boosted(X_tr, y_tr, X_val, y_val):
+    """XGBoost (the project's main model) with monotonic constraints.  If xgboost is
+    missing or rejects a setting, scikit-learn's gradient boosting with the same
+    constraints is used instead, so training always finishes."""
+    cst = _constraints()
+    pos = float(np.mean(y_tr))
+    spw = 1.0 if 0.2 <= pos <= 0.8 else float(np.sqrt((1 - pos) / max(pos, 1e-6)))
+    try:
+        import xgboost as xgb
         model = xgb.XGBClassifier(
-            n_estimators=100,
-            max_depth=4,
-            learning_rate=0.1,
-            subsample=0.8,
-            colsample_bytree=0.8,
-            min_child_weight=3,      # minimum samples per leaf (reduces overfitting)
-            gamma=0.1,               # minimum loss reduction to make a split
-            scale_pos_weight=int(y_train[y_train==0].sum() / max(y_train[y_train==1].sum(), 1)),      # balance classes (adjust if very imbalanced)
-            eval_metric="logloss",
-            early_stopping_rounds=20,
-            random_state=42,
-            verbosity=0              # suppress training output
-        )
+            n_estimators=400, max_depth=3, learning_rate=0.05, subsample=0.8,
+            colsample_bytree=0.8, min_child_weight=5, reg_lambda=2.0,
+            monotone_constraints="(" + ",".join(str(c) for c in cst) + ")",
+            scale_pos_weight=spw, eval_metric="logloss", early_stopping_rounds=30,
+            random_state=42, n_jobs=1)
+        model.fit(X_tr, y_tr, eval_set=[(X_val, y_val)], verbose=False)
+        return "xgboost", model
+    except Exception as exc:
+        print(f"  (XGBoost not used: {str(exc)[:90]} -> scikit-learn gradient boosting instead)")
+        return _fallback_boosted(X_tr, y_tr, cst)
 
-        # ── Log parameters ────────────────────────────────────────────────────
-        mlflow.log_param("model_type",       "xgboost")
-        mlflow.log_param("n_estimators",     100)
-        mlflow.log_param("max_depth",        4)
-        mlflow.log_param("learning_rate",    0.1)
-        mlflow.log_param("subsample",        0.8)
-        mlflow.log_param("colsample_bytree", 0.8)
-        mlflow.log_param("n_train",          len(X_train))
-        mlflow.log_param("n_test",           len(X_test))
 
-        # ── Train with early stopping ──────────────────────────────────────────
-        # eval_set lets XGBoost monitor validation loss during training
-        # If val loss doesn't improve for early_stopping_rounds → stop early
-        model.fit(
-            X_train, y_train,
-            eval_set=[(X_test, y_test)],
-            verbose=False    # don't print each round
-        )
+def make_logistic(X_tr, y_tr):
+    pipe = Pipeline([("scale", StandardScaler()), ("clf", LogisticRegression(max_iter=1000))])
+    pipe.fit(X_tr, y_tr)
+    return "logistic_regression", pipe
 
-        actual_trees = model.best_iteration + 1 if hasattr(model, 'best_iteration') else 100
-        print(f"  Trees actually used: {actual_trees} (of 100 max)")
 
-        # ── Evaluate ──────────────────────────────────────────────────────────
-        y_prob  = model.predict_proba(X_test)[:, 1]
-        y_pred  = model.predict(X_test)
-
-        auc      = roc_auc_score(y_test, y_prob)
-        brier    = brier_score_loss(y_test, y_prob)
-        accuracy = accuracy_score(y_test, y_pred)
-
-        # ── Log metrics ───────────────────────────────────────────────────────
-        mlflow.log_metric("auc",      auc)
-        mlflow.log_metric("brier",    brier)
-        mlflow.log_metric("accuracy", accuracy)
-        mlflow.log_metric("actual_trees_used", actual_trees)
-
-        # ── Feature importance ────────────────────────────────────────────────
-        # XGBoost computes "gain" = how much each feature reduces prediction error
-        importances = model.feature_importances_   # shape: (n_features,)
-        for feat, imp in zip(FEATURE_COLUMNS, importances):
-            mlflow.log_metric(f"importance_{feat}", float(imp))
-
-        # ── Log model to MLflow ───────────────────────────────────────────────
-        mlflow.xgboost.log_model(model, "xgboost_model")
-
-        # ── Save locally ──────────────────────────────────────────────────────
-        with open(XGBOOST_MODEL_PATH, "wb") as f:
-            pickle.dump(model, f)
-
-        # ── Print results ─────────────────────────────────────────────────────
-        print(f"  AUC:          {auc:.4f}  (target > 0.75)")
-        print(f"  Brier Score:  {brier:.4f} (target < 0.18)")
-        print(f"  Accuracy:     {accuracy:.4f}")
-
-        print(f"\n  Feature importance (XGBoost gain):")
-        sorted_features = sorted(zip(FEATURE_COLUMNS, importances),
-                                 key=lambda x: x[1], reverse=True)
-        for feat, imp in sorted_features:
-            bar = "█" * int(imp * 40)   # visual bar (proportional)
-            print(f"    {feat:<25} {bar} ({imp:.4f})")
-
-        # Print classification report (precision, recall, f1 per class)
-        print(f"\n  Classification Report:")
-        report = classification_report(y_test, y_pred,
-                                       target_names=["Forgot (0)", "Recalled (1)"])
-        for line in report.split("\n"):
-            print(f"    {line}")
-
-        print(f"\n  📁 Saved to: {XGBOOST_MODEL_PATH}")
-
+def _score(name, model, X_te, y_te, y_tr):
+    p = model.predict_proba(X_te)[:, 1]
+    brier = brier_score_loss(y_te, p)
+    ref = brier_score_loss(y_te, np.full(len(y_te), float(np.mean(y_tr))))
+    gate = run_gate(lambda X: model.predict_proba(X)[:, 1])
     return {
-        "model":      model,
-        "auc":        auc,
-        "brier":      brier,
-        "accuracy":   accuracy,
-        "model_path": XGBOOST_MODEL_PATH
+        "name": name, "model": model,
+        "auc": float(roc_auc_score(y_te, p)), "brier": float(brier),
+        "brier_skill": float(1 - brier / ref) if ref > 0 else 0.0,
+        "accuracy": float(accuracy_score(y_te, p >= 0.5)),
+        "gate": gate,
     }
 
 
-# =============================================================================
-# MODEL COMPARISON AND SELECTION
-# =============================================================================
-
-def compare_and_select(lr_results: dict, xgb_results: dict) -> str:
-    """
-    Compares Logistic Regression vs XGBoost and selects the better one.
-
-    SELECTION CRITERIA:
-      Primary:   AUC (higher is better)
-      Tiebreaker: Brier Score (lower is better)
-      We weight AUC more heavily because ranking accuracy matters most
-      for our use case (we need to rank concepts by urgency, not just
-      classify them as remembered/forgotten).
-
-    THE WINNER:
-      Saved to models/recall_model.pkl — this is what predict.py loads.
-
-    Args:
-        lr_results:  results dict from train_logistic_regression()
-        xgb_results: results dict from train_xgboost()
-
-    Returns:
-        str: "xgboost" or "logistic_regression" — winner name
-    """
-    print("\n" + "=" * 50)
-    print("Model Comparison")
-    print("=" * 50)
-    print(f"\n  {'Model':<30} {'AUC':>8} {'Brier':>8} {'Accuracy':>10}")
-    print(f"  {'-'*30} {'-'*8} {'-'*8} {'-'*10}")
-    print(f"  {'Logistic Regression':<30} "
-          f"{lr_results['auc']:>8.4f} "
-          f"{lr_results['brier']:>8.4f} "
-          f"{lr_results['accuracy']:>10.4f}")
-    print(f"  {'XGBoost':<30} "
-          f"{xgb_results['auc']:>8.4f} "
-          f"{xgb_results['brier']:>8.4f} "
-          f"{xgb_results['accuracy']:>10.4f}")
-
-    # Select winner: higher AUC wins. If tie (within 0.01), lower Brier wins.
-    auc_diff = xgb_results["auc"] - lr_results["auc"]
-
-    if auc_diff > 0.01:
-        winner = "xgboost"
-        winning_model = xgb_results["model"]
-        print(f"\n  🏆  Winner: XGBoost (AUC better by {auc_diff:.4f})")
-    elif auc_diff < -0.01:
-        winner = "logistic_regression"
-        winning_model = lr_results["model"]
-        print(f"\n  🏆  Winner: Logistic Regression (AUC better by {-auc_diff:.4f})")
-    else:
-        # AUC tie → use Brier Score as tiebreaker
-        if xgb_results["brier"] < lr_results["brier"]:
-            winner = "xgboost"
-            winning_model = xgb_results["model"]
-        else:
-            winner = "logistic_regression"
-            winning_model = lr_results["model"]
-        print(f"\n  🏆  Winner: {winner} (AUC tie, Brier decides)")
-
-    # Save winning model as the active model
-    with open(BEST_MODEL_PATH, "wb") as f:
-        pickle.dump(winning_model, f)
-    print(f"  💾  Best model saved to: {BEST_MODEL_PATH}")
-
-    return winner
+# ------------------------------------------------------------------------- mlflow
+@contextlib.contextmanager
+def _mlflow_run(run_name):
+    """Yields the mlflow module with a run open, or None if MLflow is missing/misconfigured."""
+    mlf = None
+    try:
+        import mlflow
+        mlflow.set_tracking_uri("sqlite:///" + (ROOT / "mlflow.db").as_posix())
+        mlflow.set_experiment("retent-engram-recall-prediction")
+        mlflow.start_run(run_name=run_name)
+        mlf = mlflow
+    except Exception as exc:
+        print(f"  (MLflow logging skipped: {str(exc)[:80]})")
+    try:
+        yield mlf
+    finally:
+        if mlf is not None:
+            try:
+                mlf.end_run()
+            except Exception:
+                pass
 
 
-# =============================================================================
-# SAVE METADATA
-# =============================================================================
-
-def save_metadata(winner: str, lr_results: dict, xgb_results: dict):
-    """
-    Saves a JSON file recording which model is active and its performance.
-
-    USED BY:
-      - predict.py: knows which model_type was used
-      - pipeline.py: records "xgboost" in the recall_score MongoDB doc
-      - 2_dashboard.py: shows "Model: XGBoost" in the footer
-
-    EXAMPLE metadata.json:
-      {
-        "active_model": "xgboost",
-        "trained_at": "2026-06-10T10:30:00",
-        "xgboost":  { "auc": 0.82, "brier": 0.16, "accuracy": 0.78 },
-        "logistic": { "auc": 0.74, "brier": 0.21, "accuracy": 0.70 },
-        "feature_columns": ["hours_since_last", "total_reviews", ...]
-      }
-    """
-    metadata = {
-        "active_model": winner,
-        "trained_at":   datetime.now(timezone.utc).isoformat(),
-        "xgboost": {
-            "auc":      round(xgb_results["auc"], 4),
-            "brier":    round(xgb_results["brier"], 4),
-            "accuracy": round(xgb_results["accuracy"], 4)
-        },
-        "logistic_regression": {
-            "auc":      round(lr_results["auc"], 4),
-            "brier":    round(lr_results["brier"], 4),
-            "accuracy": round(lr_results["accuracy"], 4)
-        },
-        "feature_columns":     FEATURE_COLUMNS,
-        "recall_threshold":    0.6
-    }
-
-    with open(METADATA_PATH, "w") as f:
-        json.dump(metadata, f, indent=2)
-
-    print(f"  📋  Metadata saved to: {METADATA_PATH}")
-
-
-# =============================================================================
-# MAIN TRAINING FUNCTION
-# =============================================================================
-
-def run_training_pipeline():
-    """
-    Full Phase 4 training pipeline. Call this from scripts/run_training.py.
-
-    STEPS:
-      1. Setup MLflow
-      2. Load real training data from MongoDB
-      3. Combine with synthetic data
-      4. Split into train/test
-      5. Train Logistic Regression
-      6. Train XGBoost
-      7. Compare models, select winner
-      8. Save winner to models/recall_model.pkl
-      9. Save metadata to models/model_metadata.json
-    """
-    print("\n" + "=" * 60)
-    print("  RETENT ENGRAM — Phase 4 Model Training")
-    print("=" * 60)
-
-    # ── Step 1: Setup MLflow ─────────────────────────────────────────────────
-    setup_mlflow()
-    print(f"\n📊  MLflow experiment: '{MLFLOW_EXPERIMENT}'")
-    print(f"     Run 'mlflow ui' to see the dashboard at http://localhost:5000")
-
-    # ── Step 2: Load real data ────────────────────────────────────────────────
-    print("\n📥  Loading training data from MongoDB...")
+# -------------------------------------------------------------------------- main
+def run_training_pipeline(n_students: int = 150) -> dict:
+    print("\n" + "=" * 62 + "\n  RETENT ENGRAM - model training\n" + "=" * 62)
     real_df = build_training_dataset_from_mongodb()
+    df = get_combined_training_data(real_df, n_students=n_students)
+    X, y, groups = df[FEATURE_COLUMNS].values, df[LABEL_COLUMN].values, df[GROUP_COLUMN].values
 
-    # ── Step 3: Combine with synthetic data ──────────────────────────────────
-    print("\n🤖  Generating synthetic training data...")
-    combined_df = get_combined_training_data(real_df, synthetic_multiplier=3)
+    tr, te = next(GroupShuffleSplit(1, test_size=0.2, random_state=42).split(X, y, groups))
+    tr2, va = next(GroupShuffleSplit(1, test_size=0.15, random_state=7).split(X[tr], y[tr], groups[tr]))
+    X_tr, y_tr, X_te, y_te = X[tr], y[tr], X[te], y[te]
+    X_fit, y_fit, X_val, y_val = X_tr[tr2], y_tr[tr2], X_tr[va], y_tr[va]
+    print(f"\n  rows: train {len(tr)} | test {len(te)} (different learners) | positive rate {y.mean():.0%}")
 
-    if combined_df.empty:
-        print("❌  No training data available. Cannot train model.")
-        return
+    results = [
+        _score(*make_logistic(X_tr, y_tr), X_te, y_te, y_tr),
+        _score(*make_boosted(X_fit, y_fit, X_val, y_val), X_te, y_te, y_tr),
+    ]
 
-    # ── Step 4: Train/test split ──────────────────────────────────────────────
-    from backend.ml.data_prep import get_X_y
-    X, y = get_X_y(combined_df)
+    print(f"\n  {'model':<22}{'AUC':>7}{'Brier':>8}{'skill':>8}  gate")
+    for r in results:
+        verdict = "PASS" if r["gate"]["passed"] else "FAIL: " + "; ".join(r["gate"]["problems"])
+        print(f"  {r['name']:<22}{r['auc']:>7.3f}{r['brier']:>8.3f}{r['brier_skill']:>8.2f}  {verdict}")
 
-    # 80% train, 20% test
-    # stratify=y ensures both train and test have similar label ratios
-    X_train, X_test, y_train, y_test = train_test_split(
-        X, y,
-        test_size=0.2,
-        random_state=42,
-        stratify=y      # maintain label balance in both splits
-    )
-    # Calculate class weight ratio
-    neg_count = int((y_train == 0).sum())
-    pos_count = int((y_train == 1).sum())
-    spw = neg_count // max(pos_count, 1)
-    print(f"Class balance — Forgot: {neg_count}, Recalled: {pos_count}, scale_pos_weight: {spw}")
+    eligible = [r for r in results if r["gate"]["passed"] and r["auc"] >= MIN_AUC]
+    winner = max(eligible, key=lambda r: (round(r["auc"], 3), -r["brier"])) if eligible else None
 
-    # Then pass spw into train_xgboost():
-    xgb_results = train_xgboost(X_train, y_train, X_test, y_test, scale_pos_weight=spw)
+    MODELS_DIR.mkdir(parents=True, exist_ok=True)
+    meta = {
+        "trained_at": datetime.now(timezone.utc).isoformat(),
+        "feature_columns": FEATURE_COLUMNS,
+        "n_rows": int(len(df)), "n_real_rows": int(len(real_df)),
+        "train_max_hours": float(df["hours_since_last"].max()),
+        "monotone_constraints": MONOTONE,
+        "candidates": {r["name"]: {"auc": round(r["auc"], 4), "brier": round(r["brier"], 4),
+                                   "accuracy": round(r["accuracy"], 4),
+                                   "gate_passed": r["gate"]["passed"],
+                                   "gate_problems": r["gate"]["problems"]} for r in results},
+        "note": "AUC is measured on held-out SYNTHETIC learners plus any real rows; "
+                "it shows how well the model learned the simulator, not real-world accuracy.",
+    }
+    if winner:
+        with open(MODEL_PATH, "wb") as f:
+            pickle.dump(winner["model"], f)
+        meta.update(active_model=winner["name"], gate_passed=True,
+                    **{winner["name"]: meta["candidates"][winner["name"]]})
+        print(f"\n  ACTIVE MODEL: {winner['name']}  (AUC {winner['auc']:.3f}, Brier {winner['brier']:.3f})")
+    else:
+        MODEL_PATH.unlink(missing_ok=True)          # never leave a model that failed the gate
+        meta.update(active_model="memory_model", gate_passed=False)
+        print("\n  No model passed the gate -> the app will use the memory model (scorer.py).")
+    MODEL_META_PATH.write_text(json.dumps(meta, indent=2), encoding="utf-8")
 
-    print(f"\n📊  Dataset split:")
-    print(f"    Train: {len(X_train)} rows  |  "
-          f"Recalled: {int(y_train.sum())}  |  Forgot: {int((y_train==0).sum())}")
-    print(f"    Test:  {len(X_test)} rows  |  "
-          f"Recalled: {int(y_test.sum())}  |  Forgot: {int((y_test==0).sum())}")
-
-    # ── Steps 5 & 6: Train both models inside one MLflow parent run ──────────
-    print(f"\n🚀  Starting training runs...")
-
-    with mlflow.start_run(run_name="phase4_training_comparison"):
-        # Log overall training info
-        mlflow.log_param("total_training_rows",    len(X_train))
-        mlflow.log_param("test_rows",              len(X_test))
-        mlflow.log_param("n_features",             len(FEATURE_COLUMNS))
-
-        # Train both models (nested=True means these are sub-runs inside the parent)
-        lr_results  = train_logistic_regression(X_train, y_train, X_test, y_test)
-        xgb_results = train_xgboost(X_train, y_train, X_test, y_test)
-
-        # ── Step 7: Compare and select ────────────────────────────────────────
-        winner = compare_and_select(lr_results, xgb_results)
-
-        # Log the winner to the parent run
-        mlflow.log_param("winning_model", winner)
-        mlflow.log_metric("best_auc",
-                          xgb_results["auc"] if winner == "xgboost"
-                          else lr_results["auc"])
-
-    # ── Steps 8 & 9: Save metadata ────────────────────────────────────────────
-    save_metadata(winner, lr_results, xgb_results)
-
-    print("\n" + "=" * 60)
-    print("  ✅  Training Complete!")
-    print(f"  Winner: {winner}")
-    print(f"  AUC:    {xgb_results['auc'] if winner == 'xgboost' else lr_results['auc']:.4f}")
-    print("=" * 60)
-    print("\n  Next steps:")
-    print("  1. Run 'mlflow ui' to see the experiment dashboard")
-    print("  2. Restart the Streamlit app — it will now use the ML model")
-    print("  3. Check the dashboard footer to confirm model = 'xgboost'")
+    with _mlflow_run("train_" + datetime.now().strftime("%Y%m%d_%H%M%S")) as mlf:
+        if mlf:
+            try:
+                for r in results:
+                    mlf.log_metrics({f"{r['name']}_auc": r["auc"], f"{r['name']}_brier": r["brier"],
+                                     f"{r['name']}_gate": float(r["gate"]["passed"])})
+                mlf.log_params({"rows": len(df), "real_rows": len(real_df),
+                                "active_model": meta["active_model"]})
+            except Exception as exc:
+                print(f"  (MLflow logging skipped: {str(exc)[:80]})")
     print()
+    return meta
 
 
-# Allow running directly: python backend/ml/train.py
 if __name__ == "__main__":
     run_training_pipeline()
