@@ -20,6 +20,7 @@ if str(ROOT) not in sys.path:
     sys.path.insert(0, str(ROOT))
 
 from backend.config import CONCEPTS_PATH
+from frontend.components.session import require_user
 from backend.study_log import (MANUAL, log_study, recent_events, delete_event, describe_event,
                                describe_due, count_concept_events, to_local)
 
@@ -28,18 +29,11 @@ try:
 except Exception:
     pass
 
-USER_KEYS = ("user_id", "username", "user")
+PAGE_BUILD = "2026-10-04 v3"
 ACTIVITIES = {"Learned something new": "learned", "Revised something I knew": "revised"}
 OUTCOMES = {"Understood it well": 0.85, "Mostly": 0.60, "Struggled": 0.30}
 DURATIONS = [15, 30, 45, 60, 90, "Other"]
 WHEN = ["Just now", "Earlier today", "Yesterday", "Pick a date"]
-
-
-def current_user():
-    for k in USER_KEYS:
-        if st.session_state.get(k):
-            return str(st.session_state[k])
-    return None
 
 
 def concept_names() -> dict:
@@ -120,10 +114,8 @@ st.title("Log study")
 st.caption("Studied somewhere else? Log it here in a few clicks. Everything you do inside Retent Engram - "
            "quizzes, flashcards, coding tasks, reading in My Notes - is saved automatically, so don't log those.")
 
-user_id = current_user()
-if not user_id:
-    st.warning("Please sign in first.")
-    st.stop()
+st.caption(f"{Path(__file__).name} - build {PAGE_BUILD}")
+user_id = require_user()
 names = concept_names()
 if not names:
     st.error("data/concepts.json is missing or empty.")

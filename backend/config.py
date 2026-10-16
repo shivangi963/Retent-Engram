@@ -14,6 +14,7 @@ from pathlib import Path
 ROOT = Path(__file__).resolve().parents[1]          # .../Retent-Engram
 
 DATA_DIR      = ROOT / "data"
+DOCS_DIR      = ROOT / "docs"
 NOTES_DIR     = DATA_DIR / "notes"                  # hand-written .txt notes (seed notes)
 LIBRARY_DIR   = DATA_DIR / "library"                # uploaded PDFs -> sections (JSON)
 CONCEPTS_PATH = DATA_DIR / "concepts.json"
@@ -24,6 +25,7 @@ INDEX_PATH      = INDEX_DIR / "index.faiss"
 INDEX_META_PATH = INDEX_DIR / "metadata.json"
 MODEL_PATH      = MODELS_DIR / "recall_model.pkl"
 MODEL_META_PATH = MODELS_DIR / "model_metadata.json"
+EVALUATION_PATH = MODELS_DIR / "evaluation.json"
 
 EMBEDDING_MODEL = "all-MiniLM-L6-v2"
 

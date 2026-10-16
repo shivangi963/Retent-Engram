@@ -25,11 +25,12 @@ def _difficulty_map() -> dict:
         return {}
 
 
-def compute_recall_smart(features: dict):
-    """(recall %, model name).  Trained model if valid, memory model otherwise."""
+def compute_recall_smart(features: dict, events=None):
+    """(recall %, model name).  Trained model if valid, memory model otherwise.
+    `events` (this learner's events for the concept) is only needed by the LSTM."""
     try:
         from backend.ml.predict import predict_recall, active_model_name
-        ml = predict_recall(features)
+        ml = predict_recall(features, events)
         if ml is not None:
             return ml, active_model_name()
     except Exception as exc:
@@ -50,7 +51,7 @@ def save_recall_score(user_id, concept_id, recall_score, features,
         {"user_id": user_id, "concept_id": concept_id}, {"$set": doc}, upsert=True)
 
 
-def compute_scores_for_user(user_id: str) -> list:
+def compute_scores_local(user_id: str, trigger: bool = True) -> list:
     events = list(get_collection("events").find({"user_id": user_id}, {"_id": 0}))
     if not events:
         return []
@@ -70,7 +71,7 @@ def compute_scores_for_user(user_id: str) -> list:
         features = extract_features(evs)
         if features is None:
             continue
-        recall, model_used = compute_recall_smart(features)
+        recall, model_used = compute_recall_smart(features, evs)
         info = scorer.explain(features)
         item = {
             "concept_id": concept_id, "recall_score": recall,
@@ -87,9 +88,26 @@ def compute_scores_for_user(user_id: str) -> list:
         results.append(item)
 
     results.sort(key=lambda r: r["recall_score"])
+    if trigger and results:                                  # scheduler -> RAG: prepare practice for weak concepts
+        try:
+            from backend import autogen
+            autogen.maybe_trigger(user_id, results)
+        except Exception as exc:
+            print(f"  auto-generation not started: {exc}")
     return results
+
+
+def compute_scores_for_user(user_id: str, trigger: bool = True) -> list:
+    """Recall + priority + urgency for every concept.  Through the API when RETENT_API_URL is set."""
+    from backend import remote
+    if remote.available():
+        try:
+            return remote.get(f"/recall/{user_id}")["results"]
+        except Exception as exc:
+            print(f"  API unavailable ({exc}); computing directly")
+    return compute_scores_local(user_id, trigger)
 
 
 def compute_scores_for_all_users() -> dict:
     users = get_collection("users").find({}, {"user_id": 1, "_id": 0})
-    return {u["user_id"]: compute_scores_for_user(u["user_id"]) for u in users}
+    return {u["user_id"]: compute_scores_local(u["user_id"]) for u in users}

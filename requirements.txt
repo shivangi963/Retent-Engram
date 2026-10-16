@@ -16,3 +16,12 @@ pdfplumber==0.10.3
 lifelines 
 langchain
 transformers==4.38.0 
+fastapi          # the API backend (backend/api.py)
+uvicorn          # runs the API
+httpx            # lets FastAPI's test client run (scripts/selfcheck.py)
+torch            # PyTorch LSTM sequence model
+lifelines        # Cox survival model (comparison row)
+langchain-core   # LangChain RAG chain (rag/chain.py)
+langchain-ollama # LangChain's connector to the local Ollama server
+matplotlib       # draws docs/model_comparison.png
+dnspython        # needed for mongodb+srv:// (Atlas) connection strings

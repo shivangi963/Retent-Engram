@@ -21,11 +21,12 @@ if str(ROOT) not in sys.path:
 from backend.config import CONCEPTS_PATH
 from backend.study_log import get_studied_sections, make_logger
 from frontend.components import practice
+from frontend.components.session import require_user
 from rag import generate as gen
 from rag import pdf_ingest as lib
 from rag import store
 
-USER_KEYS = ("user_id", "username", "user")          # session_state keys your login may use
+PAGE_BUILD = "2026-10-04 v3"
 
 try:
     st.set_page_config(page_title="My Notes", page_icon=":material/menu_book:", layout="wide")
@@ -34,13 +35,6 @@ except Exception:
 
 
 # ------------------------------------------------------------------------------ helpers
-def current_user():
-    for k in USER_KEYS:
-        if st.session_state.get(k):
-            return str(st.session_state[k])
-    return None
-
-
 def concept_names() -> dict:
     try:
         return {c["concept_id"]: c["name"] for c in json.loads(Path(CONCEPTS_PATH).read_text(encoding="utf-8"))}
@@ -72,10 +66,8 @@ def open_section(doc_id: str, section_id: str):      # button callbacks run befo
 st.title("My Notes")
 st.caption("Upload your PDFs, read them section by section, and turn any section into flashcards or a quiz.")
 
-user_id = current_user()
-if not user_id:
-    st.warning("Please sign in first.")
-    st.stop()
+st.caption(f"{Path(__file__).name} - build {PAGE_BUILD}")
+user_id = require_user()
 
 show_flash()
 names = concept_names()

@@ -120,7 +120,7 @@ def remove_where(predicate) -> int:
 
 
 # ------------------------------------------------------------------------ reads
-def search(query: str, k: int = 4, concept_ids=None, doc_id=None) -> list:
+def search_local(query: str, k: int = 4, concept_ids=None, doc_id=None) -> list:
     """Top-k chunks (best first) optionally limited to some concepts or one document."""
     index, meta = load()
     if index is None or index.ntotal == 0 or not query.strip():
@@ -141,6 +141,17 @@ def search(query: str, k: int = 4, concept_ids=None, doc_id=None) -> list:
         if len(out) >= k:
             break
     return out
+
+
+def search(query: str, k: int = 4, concept_ids=None, doc_id=None) -> list:
+    """Nearest passages.  Through the API when RETENT_API_URL is set and reachable."""
+    from backend import remote
+    if remote.available():
+        try:
+            return remote.get("/search", q=query, k=k, concept_ids=",".join(concept_ids or []), doc_id=doc_id)["hits"]
+        except Exception as exc:
+            print(f"  API unavailable ({exc}); searching directly")
+    return search_local(query, k, concept_ids, doc_id)
 
 
 def is_ready() -> bool:

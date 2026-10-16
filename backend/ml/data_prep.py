@@ -38,6 +38,24 @@ def extract_labeled_rows_for_concept(events: list) -> list:
     return rows
 
 
+def build_pairs_from_events(all_events: list) -> list:
+    """[(user_id, concept_id, [events])] - one entry per learner-concept history."""
+    grouped = defaultdict(list)
+    for e in all_events:
+        grouped[(e.get("user_id", ""), e.get("concept_id", ""))].append(e)
+    return [(u, c, evs) for (u, c), evs in grouped.items()]
+
+
+def build_pairs_from_mongodb() -> list:
+    """Real learner-concept histories from MongoDB ([] if the DB is down or empty)."""
+    try:
+        from backend.db import get_collection
+        return build_pairs_from_events(list(get_collection("events").find({}, {"_id": 0})))
+    except Exception as exc:
+        print(f"  Could not read events from MongoDB ({exc}).")
+        return []
+
+
 def build_training_dataset_from_mongodb() -> pd.DataFrame:
     """Real rows from MongoDB.  Returns an empty frame (never raises) if the DB is
     unreachable or there is not enough history yet."""

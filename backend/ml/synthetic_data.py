@@ -65,19 +65,27 @@ def _simulate_pair(rng, user_id, concept_id, difficulty, h_mult, skill, n_review
     return events
 
 
-def generate_synthetic_dataset(n_students=150, concepts_per_student=6,
-                               min_reviews=4, max_reviews=9, seed=42) -> pd.DataFrame:
+def generate_synthetic_pairs(n_students=150, concepts_per_student=6,
+                             min_reviews=4, max_reviews=9, seed=42) -> list:
+    """[(user_id, concept_id, [events])] for simulated learners (same simulator as before)."""
     rng = np.random.default_rng(seed)
     concepts = list(CONCEPT_DIFFICULTY)
-    rows = []
+    pairs = []
     for s in range(n_students):
         uid = f"syn_{s:04d}"
         h_mult = float(np.exp(rng.normal(0, 0.45)))           # fast vs slow forgetters
         skill = float(rng.beta(6, 3))
         for cid in rng.choice(concepts, size=min(concepts_per_student, len(concepts)), replace=False):
             n = int(rng.integers(min_reviews, max_reviews + 1))
-            ev = _simulate_pair(rng, uid, str(cid), CONCEPT_DIFFICULTY[str(cid)], h_mult, skill, n)
-            rows.extend(extract_labeled_rows_for_concept(ev))
+            pairs.append((uid, str(cid), _simulate_pair(rng, uid, str(cid), CONCEPT_DIFFICULTY[str(cid)], h_mult, skill, n)))
+    return pairs
+
+
+def generate_synthetic_dataset(n_students=150, concepts_per_student=6,
+                               min_reviews=4, max_reviews=9, seed=42) -> pd.DataFrame:
+    rows = []
+    for _, _, ev in generate_synthetic_pairs(n_students, concepts_per_student, min_reviews, max_reviews, seed):
+        rows.extend(extract_labeled_rows_for_concept(ev))
     return pd.DataFrame(rows)
 
 

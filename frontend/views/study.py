@@ -18,9 +18,11 @@ if str(ROOT) not in sys.path:
 
 import json
 
+from backend import autogen
 from backend.config import CONCEPTS_PATH
 from backend.ml.pipeline import compute_scores_for_user
 from backend.study_log import make_logger
+from frontend.components.session import require_user
 from frontend.components import practice
 from rag import generate as gen
 from rag import store
@@ -30,18 +32,11 @@ try:
 except Exception:
     pass
 
-USER_KEYS = ("user_id", "username", "user")
+PAGE_BUILD = "2026-10-04 v3"
 TYPES = {"Flashcard": gen.FLASHCARD, "Summary": gen.SUMMARY, "Quiz (3 questions)": gen.QUIZ, "Coding task": gen.CODING_TASK}
 LEVEL_TEXT = {"beginner": "Beginner-level content (your recall is low)",
               "intermediate": "Intermediate content",
               "advanced": "Advanced content (you remember this well)"}
-
-
-def current_user():
-    for k in USER_KEYS:
-        if st.session_state.get(k):
-            return str(st.session_state[k])
-    return None
 
 
 def load_concepts() -> list:
@@ -65,10 +60,8 @@ def request(concept_id, concept_name, content_type, recall, force):
 st.title("Study")
 st.caption("AI-generated review material from your own notes. Everything you do here is saved automatically.")
 
-user_id = current_user()
-if not user_id:
-    st.warning("Please sign in first.")
-    st.stop()
+st.caption(f"{Path(__file__).name} - build {PAGE_BUILD}")
+user_id = require_user()
 concepts = load_concepts()
 if not concepts:
     st.error("data/concepts.json is missing or empty.")
@@ -109,6 +102,11 @@ with left:
             st.caption(llm["hint"])
         if not store.is_ready():
             st.caption("No notes yet - add a PDF in My Notes so the AI has something to work from.")
+        ready = autogen.ready_items(user_id)
+        if ready:
+            labels = [f"{by_id[r['concept_id']]['name'] if r['concept_id'] in by_id else r['concept_id']} - "
+                      f"{r['content_type'].replace('_', ' ')}" for r in ready]
+            st.caption("Prepared for you automatically: " + "; ".join(labels) + ". Pick one and press Generate to open it instantly.")
 
 with right:
     pending = st.session_state.pop("study_pending", None)
@@ -122,7 +120,7 @@ with right:
         if not prep["content"] and not prep["error"]:
             with st.status("Writing from your notes...", expanded=True) as status:
                 try:
-                    result["text"] = st.write_stream(gen.stream_ollama(prep["prompt"], pending["ctype"]))
+                    result["text"] = st.write_stream(gen.stream_generation(prep, pending["ctype"]))
                     gen.finish_generation(user_id, pending["cid"], pending["ctype"], result["text"], prep["difficulty_level"])
                     status.update(label="Ready", state="complete", expanded=False)
                 except RuntimeError as exc:

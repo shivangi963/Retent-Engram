@@ -37,7 +37,7 @@ ACTIVITY_LABELS = {"learned": "Learned something new", "revised": "Revised somet
 
 
 # ------------------------------------------------------------------------ writing
-def log_study(user_id: str, concept_id: str, score: float, event_type: str = "reading",
+def log_study_local(user_id: str, concept_id: str, score: float, event_type: str = "reading",
               minutes: float = 5, source: str = "notes", doc_id=None, section_id=None,
               timestamp=None, activity=None, note=None):
     """Save one study event, refresh recall scores and the streak.
@@ -79,6 +79,26 @@ def log_study(user_id: str, concept_id: str, score: float, event_type: str = "re
         except Exception as exc:
             print(f"  streak update skipped: {exc}")
     return out
+
+
+def log_study(user_id: str, concept_id: str, score: float, event_type: str = "reading",
+              minutes: float = 5, source: str = "notes", doc_id=None, section_id=None,
+              timestamp=None, activity=None, note=None):
+    """Public entry point.  Goes through the FastAPI backend when RETENT_API_URL is set and reachable,
+    otherwise saves directly (same result either way)."""
+    from backend import remote
+    if remote.available():
+        try:
+            res = remote.post("/events", {
+                "user_id": user_id, "concept_id": concept_id, "score": score, "event_type": event_type,
+                "minutes": minutes, "source": source, "doc_id": doc_id, "section_id": section_id,
+                "timestamp": timestamp.isoformat() if hasattr(timestamp, "isoformat") else timestamp,
+                "activity": activity, "note": note})
+            return res if res.get("ok") else False
+        except Exception as exc:
+            print(f"  API unavailable ({exc}); saving directly")
+    return log_study_local(user_id, concept_id, score, event_type, minutes, source, doc_id, section_id,
+                           timestamp, activity, note)
 
 
 def make_logger(user_id: str, concept_id: str, doc_id=None, section_id=None):

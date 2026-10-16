@@ -102,7 +102,7 @@ def warm_up(background: bool = True):
     (threading.Thread(target=_go, daemon=True).start() if background else _go())
 
 
-def stream_ollama(prompt: str, kind: str = "answer"):
+def stream_ollama_local(prompt: str, kind: str = "answer"):
     """Yield the reply token by token.  Raises RuntimeError with a message fit for the UI."""
     model = pick_model()
     if model is None:
@@ -138,6 +138,20 @@ def stream_ollama(prompt: str, kind: str = "answer"):
                 f"{model} sent nothing for {READ_TIMEOUT}s. The computer may be out of memory - close other "
                 "apps, or try a smaller model:  ollama pull llama3.2:3b")
         raise RuntimeError("Lost the connection to Ollama. Start it with:  ollama serve")
+
+
+def stream_ollama(prompt: str, kind: str = "answer"):
+    """Token stream.  Through the API's /llm/stream when RETENT_API_URL is set and reachable."""
+    from backend import remote
+    if remote.available():
+        try:
+            yield from remote.stream_text("/llm/stream", {"prompt": prompt, "kind": kind})
+            return
+        except remote.RemoteError as exc:                         # API answered with an HTTP error: use the local path
+            print(f"  API unavailable ({exc}); generating directly")
+        except requests.exceptions.ConnectionError:
+            print("  API unavailable; generating directly")
+    yield from stream_ollama_local(prompt, kind)
 
 
 def call_ollama(prompt: str, temperature: float = 0.4, kind: str = "answer") -> str:
@@ -206,13 +220,21 @@ _FORMATS = {
 }
 
 
-def build_prompt(content_type: str, concept_name: str, context: str, difficulty: str) -> str:
+SYSTEM_PROMPT = "You are a computer-science tutor. Use ONLY the notes below; do not add facts that are not in them."
+HUMAN_TEMPLATE = "Subject: {name}. Difficulty: {difficulty}. {level}\n\nNOTES:\n{context}\n\n{format}"
+LEVEL = _LEVEL
+
+
+def format_for(content_type: str, concept_name: str) -> str:
     if content_type not in _FORMATS:
         raise ValueError(f"Unknown content type: {content_type}. Use one of {VALID_CONTENT_TYPES}")
-    fmt = _FORMATS[content_type].format(name=concept_name)
-    return (f"You are a computer-science tutor. Use ONLY the notes below; do not add facts that are not in them.\n"
-            f"Subject: {concept_name}. Difficulty: {difficulty}. {_LEVEL[difficulty]}\n\n"
-            f"NOTES:\n{context}\n\n{fmt}")
+    return _FORMATS[content_type].format(name=concept_name)
+
+
+def build_prompt(content_type: str, concept_name: str, context: str, difficulty: str) -> str:
+    return SYSTEM_PROMPT + "\n" + HUMAN_TEMPLATE.format(
+        name=concept_name, difficulty=difficulty, level=_LEVEL[difficulty], context=context,
+        format=format_for(content_type, concept_name))
 
 
 def get_prompt_for_type(content_type, concept_name, context, difficulty):      # old name
@@ -324,11 +346,12 @@ def parse_coding_task(text: str) -> dict:
 
 
 # ===================================================================== MongoDB cache
-def save_generated_content(user_id, concept_id, content_type, content, difficulty_level, model=None) -> str:
+def save_generated_content(user_id, concept_id, content_type, content, difficulty_level, model=None, auto=False) -> str:
     res = get_collection("generated_content").insert_one({
         "user_id": user_id, "concept_id": concept_id, "content_type": content_type, "content": content,
         "difficulty_level": difficulty_level, "generated_at": datetime.now(timezone.utc),
-        "rating": 0, "was_reviewed": False, "model_used": model or pick_model() or "unknown"})
+        "rating": 0, "was_reviewed": False, "model_used": model or pick_model() or "unknown",
+        "auto_generated": bool(auto)})
     return str(res.inserted_id)
 
 
@@ -406,12 +429,32 @@ def prepare_generation(user_id, concept_id, concept_name, content_type, recall_s
     return out
 
 
-def finish_generation(user_id, concept_id, content_type, text, difficulty_level):
+def stream_generation(prep: dict, content_type: str):
+    """Token stream for a prepared request (see prepare_generation).  Uses the LangChain RAG chain
+    when RETENT_USE_LANGCHAIN=1 and LangChain is installed - in the process that owns the LLM, i.e.
+    not when Streamlit is delegating to the API - otherwise the direct Ollama path."""
+    from backend import remote
+    from rag import chain
+    started = False
+    if chain.enabled() and chain.available() and not remote.available():
+        try:
+            for tok in chain.stream_rag(prep["concept_id"], prep["concept_name"], content_type, prep["difficulty_level"]):
+                started = True
+                yield tok
+            return
+        except Exception as exc:
+            if started:
+                raise RuntimeError(f"The LangChain pipeline stopped: {exc}")
+            print(f"  LangChain path failed ({exc}); using the direct path")
+    yield from stream_ollama(prep["prompt"], content_type)
+
+
+def finish_generation(user_id, concept_id, content_type, text, difficulty_level, auto=False):
     if text and text.strip():
-        save_generated_content(user_id, concept_id, content_type, text.strip(), difficulty_level)
+        save_generated_content(user_id, concept_id, content_type, text.strip(), difficulty_level, auto=auto)
 
 
-def generate_content(user_id, concept_id, concept_name, content_type, recall_score, force_regenerate=False) -> dict:
+def generate_content(user_id, concept_id, concept_name, content_type, recall_score, force_regenerate=False, auto=False) -> dict:
     """Same signature and result keys as before, plus 'model' and 'fallback_passages' (the notes the
     answer would have been built from - show them when generation fails so the student can still revise)."""
     prep = prepare_generation(user_id, concept_id, concept_name, content_type, recall_score, force_regenerate)
@@ -421,11 +464,11 @@ def generate_content(user_id, concept_id, concept_name, content_type, recall_sco
     if prep["content"] or prep["error"]:
         return result
     try:
-        text = call_ollama(prep["prompt"], kind=content_type)
+        text = "".join(stream_generation(prep, content_type)).strip()
         if not text:
             result["error"] = "The model returned an empty answer. Try again."
             return result
-        finish_generation(user_id, concept_id, content_type, text, prep["difficulty_level"])
+        finish_generation(user_id, concept_id, content_type, text, prep["difficulty_level"], auto=auto)
         result["content"] = text
     except RuntimeError as exc:
         result["error"] = str(exc)

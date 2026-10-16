@@ -1,133 +1,64 @@
-#  Retent Engram
+# Retent Engram
 
-**A personal project I built to stop forgetting what I study.**
+**Personalised cognitive recall assistant** - estimates how much of each concept a student still
+remembers, tells them what to review today, and writes practice material from their own notes.
+Runs entirely on a laptop (no cloud LLM).
 
-Ever revised for an exam, felt confident, then blanked on the same topic two weeks later?
-That kept happening to me. So I built a system that tracks what I study, predicts when I'll
-forget it, and generates personalised revision content right before I do.
-
----
-
-## What It Does
-
-Instead of generic flashcard apps or fixed revision schedules, this app is personalized
-to *my* forgetting patterns:
-
-- **Logs study sessions** — every time I read, attempt a quiz, or do a coding problem,
-  I log the concept, how long it took, and how well I did
-- **Predicts recall** — uses the Ebbinghaus forgetting curve and an XGBoost model
-  trained on my own event history to estimate how much I remember *right now*
-- **Builds a daily queue** — ranks concepts by urgency (low recall + long gap + high difficulty)
-  and shows me exactly what to study today
-- **Generates study material** — uses Mistral 7B running locally to generate flashcards,
-  summaries, MCQ quizzes, and coding tasks tailored to my current recall level
-- **Tracks streaks and goals** — keeps me honest about daily review habits
-
----
-
-## Tech Stack
-
-| What | How |
-|---|---|
-| Frontend | Streamlit |
-| Database | MongoDB |
-| ML model | XGBoost + Logistic Regression (scikit-learn) |
-| Experiment tracking | MLflow |
-| Vector search | FAISS |
-| Embeddings | sentence-transformers (all-MiniLM-L6-v2) |
-| Local LLM | Mistral 7B via Ollama |
-| Data processing | Pandas, NumPy, SciPy |
-| Visualisation | Plotly |
-
-Everything runs locally — no cloud APIs, no subscriptions, no data leaving my machine.
-
----
-
-## How It Works (the interesting parts)
-
-### Recall Scoring
-Each concept gets a recall score (0–100%) computed from:
-- Time since last review
-- Number of total reviews
-- Recent performance scores
-- Success streak (last 3 sessions)
-
-These feed into a modified Ebbinghaus decay formula first, then into a trained
-XGBoost classifier once enough events are logged. The model predicts the probability
-of recall at the next review and converts it to a score.
-
-### Urgency Scoring
-The daily queue uses a weighted urgency formula:
+## How it works
 
 ```
-urgency = (0.5 × low_recall) + (0.3 × long_gap) + (0.2 × high_difficulty)
+Student -> Streamlit (7 pages) -> FastAPI backend -> MongoDB          events, scores, content
+                                                  -> recall models    decay formula | XGBoost | survival | LSTM
+                                                  -> review scheduler urgency queue, auto-prepared practice
+                                                  -> RAG              FAISS retrieval + LangChain chain
+                                                  -> Ollama           local LLM
 ```
 
-This means a hard concept I haven't touched in a week with low recall shoots to the
-top of the queue — exactly what I need reviewed most urgently.
+1. Every study action is an **event** (concept, score 0-1, time). Practice done in the app is logged automatically;
+   study elsewhere is logged on the *Log study* page.
+2. Six **features** per concept (hours since last review, number of reviews, average and last score,
+   success streak, average time) feed the **recall model**.
+3. The **scheduler** ranks concepts by urgency and builds *Today*. When a concept falls below 65% recall,
+   practice for it is **prepared automatically** in the background (`backend/autogen.py`).
+4. **RAG**: uploaded PDFs -> sections -> chunks -> MiniLM embeddings -> FAISS. The LLM is told to use only the
+   retrieved passages, at a difficulty chosen from the recall level.
+5. Finishing a quiz / flashcards / coding task saves the result and the loop repeats.
 
-### RAG Pipeline
-When I need to study a concept, the app:
-1. Searches a local FAISS vector index built from my own notes
-2. Retrieves the 3–4 most relevant text chunks
-3. Sends them as context to Mistral 7B with a difficulty-adapted prompt
-4. Returns a flashcard, summary, quiz, or coding task grounded in my notes
+## Models (all trained on the same learners, compared in `docs/model_comparison.md`)
 
-This prevents hallucination — the LLM can only use what's in my notes.
+| Model | Library | Note |
+|---|---|---|
+| Decay formula ("memory model") | NumPy | default; works from the first event; safety net |
+| Logistic regression | scikit-learn | baseline |
+| XGBoost | xgboost | monotonic constraint: waiting longer never raises recall |
+| Survival (Weibull) | SciPy (own code) | time-to-forget with current-status censoring; extrapolates |
+| Survival (Cox) | lifelines | comparison only |
+| Sequence model | **PyTorch** LSTM | reads the review history; Weibull-shaped recall curve |
 
----
+A trained model is used only if it passes a sanity gate (recall must fall as time passes, AUC >= 0.70 on held-out
+learners). Most training examples come from a simulator of learners, so the reported AUC shows how well a model
+learned that pattern - **not** real-world accuracy. Real accuracy needs real logged sessions / the classmate pilot.
 
-## Running It Locally
+## Run it
 
-**Requirements:** Python 3.11+, MongoDB, Ollama
-
-```bash
-# Clone and set up
-git clone https://github.com/shivangi963/Retent-Engram.git
-cd Retent-Engram
-python -m venv venv
-venv\Scripts\activate        # Windows
-# source venv/bin/activate   # macOS/Linux
-
+```
 pip install -r requirements.txt
+pip install -r requirements_new.txt          # optional extras
+copy .env.example .env                       # then edit
+ollama pull llama3.2:3b                      # small, fast; mistral also works
+python scripts/run_training.py               # trains + compares all models, writes docs/model_comparison.md
+python scripts/selfcheck.py                  # checks every component on your machine
 
-# Set up environment
-cp .env.example .env
-# Edit .env: MONGO_URI=mongodb://localhost:27017
-
-# Build the knowledge base (indexes concept notes for RAG)
-python rag/ingest.py
-
-# Train the ML model
-python scripts/run_training.py
-
-# Run the app
-streamlit run frontend/main.py
+streamlit run frontend/main.py                         # simple mode: one process
+python scripts/start_all.py                            # full architecture: Streamlit -> FastAPI (docs at :8000/docs)
 ```
 
-For the LLM to work, install [Ollama](https://ollama.com) separately and run:
-```bash
-ollama pull mistral
-ollama serve
+Atlas instead of local MongoDB: `docs/ATLAS_SETUP.md`.
+
+## Layout
+
 ```
-
-
-## What I Learned Building This
-
-- **MongoDB aggregation pipelines** — writing `$group`, `$sort`, `$match` to derive
-  stats from raw event logs without pulling everything into Python first
-- **FAISS vector search** — building and querying a local vector index, understanding
-  why normalized embeddings let you use inner product instead of cosine similarity
-- **Prompt engineering** — how much prompt structure matters for consistent LLM output;
-  specifying exact output format (QUESTION:/ANSWER:) made parsing reliable
-- **XGBoost with MLflow** — tracking experiments properly so I could actually compare
-  runs instead of guessing which hyperparameters worked
-- **Streamlit session state** — managing user login across multiple pages without
-  a backend auth system
-- **Ebbinghaus memory science** — the math behind spaced repetition and why half-life
-  based models outperform fixed-interval schedules
-
----
-
-*Built this over several months while studying for exams. The irony of using it to
-study the same CS topics it's built on (DBMS, OS, DSA) was not lost on me.*
+frontend/   Streamlit pages + components        backend/    service layer, FastAPI, ML, scheduler, auto-generation
+rag/        PDF library, FAISS store, LLM       scripts/    training, API, self-check, MongoDB copy
+data/       concepts.json, notes, PDF library   models/     trained model files, FAISS index (git-ignored)
+```
