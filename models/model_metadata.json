@@ -1,5 +1,5 @@
 {
-  "trained_at": "2026-10-15T19:44:43.427860+00:00",
+  "trained_at": "2026-11-18T16:38:10.521727+00:00",
   "feature_columns": [
     "hours_since_last",
     "total_reviews",
@@ -8,8 +8,8 @@
     "success_streak",
     "avg_response_time"
   ],
-  "n_rows": 4925,
-  "n_real_rows": 3,
+  "n_rows": 4928,
+  "n_real_rows": 6,
   "train_max_hours": 2737.75,
   "monotone_constraints": {
     "hours_since_last": -1,
@@ -18,33 +18,33 @@
   },
   "candidates": {
     "logistic_regression": {
-      "auc": 0.9112,
-      "brier": 0.1229,
-      "log_loss": 0.3747,
+      "auc": 0.9108,
+      "brier": 0.1232,
+      "log_loss": 0.3755,
       "accuracy": 0.7998,
       "gate_passed": true,
       "gate_problems": []
     },
     "xgboost": {
-      "auc": 0.9522,
-      "brier": 0.0886,
-      "log_loss": 0.2798,
-      "accuracy": 0.8728,
+      "auc": 0.9528,
+      "brier": 0.0876,
+      "log_loss": 0.2773,
+      "accuracy": 0.8748,
       "gate_passed": true,
       "gate_problems": []
     },
     "survival_weibull": {
-      "auc": 0.9428,
-      "brier": 0.0978,
-      "log_loss": 0.3106,
+      "auc": 0.9427,
+      "brier": 0.0979,
+      "log_loss": 0.3108,
       "accuracy": 0.855,
       "gate_passed": true,
       "gate_problems": []
     },
     "survival_cox": {
-      "auc": 0.9128,
-      "brier": 0.2177,
-      "log_loss": 0.6739,
+      "auc": 0.9129,
+      "brier": 0.2178,
+      "log_loss": 0.6741,
       "accuracy": 0.6765,
       "gate_passed": null,
       "gate_problems": [
@@ -52,10 +52,10 @@
       ]
     },
     "lstm": {
-      "auc": 0.9647,
-      "brier": 0.076,
-      "log_loss": 0.2386,
-      "accuracy": 0.8886,
+      "auc": 0.9651,
+      "brier": 0.0757,
+      "log_loss": 0.2395,
+      "accuracy": 0.8846,
       "gate_passed": true,
       "gate_problems": []
     }
@@ -66,10 +66,10 @@
   "active_model": "lstm",
   "gate_passed": true,
   "lstm": {
-    "auc": 0.9647,
-    "brier": 0.076,
-    "log_loss": 0.2386,
-    "accuracy": 0.8886,
+    "auc": 0.9651,
+    "brier": 0.0757,
+    "log_loss": 0.2395,
+    "accuracy": 0.8846,
     "gate_passed": true,
     "gate_problems": []
   }

@@ -190,7 +190,14 @@ def _fastapi():
     _cleanup_user()
     return "PASS", "; ".join(notes)
 
-
+def client_has_mongo() -> bool:
+    try:
+        from backend.db import get_collection
+        get_collection("users").find_one({}, {"_id": 1})
+        return True
+    except Exception:
+        return False
+    
 @check("Streamlit -> API path (real server)")
 def _remote():
     try:
@@ -211,6 +218,7 @@ def _remote():
     assert server.started, "server did not start"
     old, was_server = os.environ.get("RETENT_API_URL"), os.environ.pop("RETENT_IS_API_SERVER", None)
     os.environ["RETENT_API_URL"] = f"http://127.0.0.1:{port}"
+    #remote.reset()
     remote.reset()
     try:
         assert remote.available()
@@ -243,13 +251,6 @@ def _remote():
         _cleanup_user()
 
 
-def client_has_mongo() -> bool:
-    try:
-        from backend.db import get_collection
-        get_collection("users").find_one({}, {"_id": 1})
-        return True
-    except Exception:
-        return False
 
 
 @check("MongoDB (local or Atlas)")

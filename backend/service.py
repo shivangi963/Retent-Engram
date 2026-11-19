@@ -26,22 +26,32 @@ from backend.remote import ERROR_MARK
 from backend.study_log import log_study_local
 from rag import generate as gen
 from rag import store
+from bson import ObjectId
 
 
 def to_jsonable(obj):
-    """datetime -> ISO string, numpy numbers -> python numbers, recursively."""
+    """Convert MongoDB and Python values into JSON-safe data."""
+
+    if isinstance(obj, ObjectId):
+        return str(obj)
+
     if isinstance(obj, dict):
         return {str(k): to_jsonable(v) for k, v in obj.items()}
+
     if isinstance(obj, (list, tuple, set)):
         return [to_jsonable(v) for v in obj]
+
     if isinstance(obj, (datetime, date)):
         return obj.isoformat()
-    if hasattr(obj, "item") and callable(obj.item):          # numpy scalar
+
+    if hasattr(obj, "item") and callable(obj.item):
         try:
             return obj.item()
         except Exception:
             return str(obj)
+
     return obj
+
 
 
 def _concepts() -> dict:
@@ -51,17 +61,31 @@ def _concepts() -> dict:
         return {}
 
 
+
 def health() -> dict:
-    mongo = True
+    mongo = False
+
     try:
         from backend.db import get_collection
         get_collection("users").find_one({}, {"_id": 1})
+        mongo = True
     except Exception:
         mongo = False
+
     ok_kb, kb_msg = store.status_text()
-    return {"status": "ok", "mongodb": mongo, "ollama": gen.is_ollama_running(), "llm": gen.pick_model(),
-            "knowledge_base": ok_kb, "knowledge_base_detail": kb_msg, "recall_model": active_model_name(),
-            "autogen": autogen.enabled()}
+
+    return {
+        "status": "ok",
+        "mongodb": mongo,
+        "knowledge_base": ok_kb,
+        "knowledge_base_detail": kb_msg,
+        "recall_model": active_model_name(),
+        "autogen": autogen.enabled(),
+        "ollama": None,
+        "llm": None
+    }
+
+
 
 
 def log_event(p: dict) -> dict:

@@ -1,19 +1,19 @@
 {
-  "generated_at": "2026-10-15 19:44 UTC",
-  "examples": 4925,
-  "real_examples": 3,
+  "generated_at": "2026-11-18 16:38 UTC",
+  "examples": 4928,
+  "real_examples": 6,
   "learners": 151,
   "test_examples": 1014,
   "test_learners": 31,
-  "positive_rate": 0.46274111675126905,
+  "positive_rate": 0.4628652597402597,
   "winner": "lstm",
   "models": {
     "logistic_regression": {
       "status": "ok",
-      "auc": 0.9112051998349259,
-      "brier": 0.12292122358627273,
-      "brier_skill": 0.5019382996155632,
-      "log_loss": 0.37470350472792174,
+      "auc": 0.9108044189073363,
+      "brier": 0.12319819099738008,
+      "brier_skill": 0.500841104415192,
+      "log_loss": 0.3755057835041484,
       "accuracy": 0.7998027613412229,
       "gate": {
         "passed": true,
@@ -23,11 +23,11 @@
     },
     "xgboost": {
       "status": "ok",
-      "auc": 0.9522356433129108,
-      "brier": 0.08863243140185047,
-      "brier_skill": 0.6408722740851204,
-      "log_loss": 0.27978317653957097,
-      "accuracy": 0.8727810650887574,
+      "auc": 0.9528149900003174,
+      "brier": 0.08760555204922903,
+      "brier_skill": 0.6450508708450069,
+      "log_loss": 0.2773308383728524,
+      "accuracy": 0.8747534516765286,
       "gate": {
         "passed": true,
         "problems": []
@@ -36,10 +36,10 @@
     },
     "survival_weibull": {
       "status": "ok",
-      "auc": 0.9428034030665693,
-      "brier": 0.09780023345164973,
-      "brier_skill": 0.6037254661987981,
-      "log_loss": 0.3105508011987065,
+      "auc": 0.9426922954826831,
+      "brier": 0.0979196177713181,
+      "brier_skill": 0.6032616399062458,
+      "log_loss": 0.3108321265078143,
       "accuracy": 0.8550295857988166,
       "gate": {
         "passed": true,
@@ -49,10 +49,10 @@
     },
     "survival_cox": {
       "status": "ok",
-      "auc": 0.912756737881337,
-      "brier": 0.21766906030748034,
-      "brier_skill": 0.11803170246075245,
-      "log_loss": 0.6739301859440495,
+      "auc": 0.9129313355131582,
+      "brier": 0.21775180516506884,
+      "brier_skill": 0.11774069328578451,
+      "log_loss": 0.6741323259426203,
       "accuracy": 0.6765285996055227,
       "gate": {
         "passed": null,
@@ -64,11 +64,11 @@
     },
     "lstm": {
       "status": "ok",
-      "auc": 0.9646598520681884,
-      "brier": 0.07596229786474015,
-      "brier_skill": 0.6922100989902067,
-      "log_loss": 0.23857929217485302,
-      "accuracy": 0.888560157790927,
+      "auc": 0.965056664867782,
+      "brier": 0.07571750556503415,
+      "brier_skill": 0.6932173585642768,
+      "log_loss": 0.2394909202586179,
+      "accuracy": 0.8846153846153846,
       "gate": {
         "passed": true,
         "problems": []

@@ -3,6 +3,7 @@ from dotenv import load_dotenv
 import os
 from datetime import datetime
 
+
 load_dotenv(
     dotenv_path=os.path.join(
         os.path.dirname(__file__),
@@ -11,20 +12,36 @@ load_dotenv(
     )
 )
 
-uri = os.getenv("MONGO_URI")
+# Read environment variables locally and Streamlit Secrets in cloud
+def get_setting(key, default=None):
+    value = os.getenv(key)
+
+    if value:
+        return value
+
+    try:
+        import streamlit as st
+        return st.secrets.get(key, default)
+    except Exception:
+        return default
+
+
+uri = get_setting("MONGO_URI")
+db_name = get_setting("MONGO_DB_NAME", "pkdp_db")
 
 if not uri:
     raise EnvironmentError(
-        "MONGO_URI not found in .env file! "
-        "Check that .env exists at D:\\retent\\.env"
+        "MONGO_URI is missing. Configure it in "
+        "your .env file or Streamlit Secrets."
     )
 
-client = MongoClient(uri)
-db = client["pkdp_db"]
+client = MongoClient(uri, serverSelectionTimeoutMS=10000)
+db = client[db_name]
 
 events_col = db["events"]
 users_col = db["users"]
 concepts_col = db["concepts"]
+
 
 
 def normalize_user_id(user_id: str) -> str:
